@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../sequelize');
+const { User } = require('./user');
 
 const FacebookAccount = sequelize.define('FacebookAccount', {
   id: {
@@ -11,7 +12,7 @@ const FacebookAccount = sequelize.define('FacebookAccount', {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: 'Users',
+      model: 'users',
       key: 'id'
     }
   },
@@ -64,6 +65,10 @@ const FacebookAccount = sequelize.define('FacebookAccount', {
   tableName: 'FacebookAccounts',
   timestamps: true
 });
+
+// Define associations to ensure proper FK constraints and sync order
+User.hasOne(FacebookAccount, { foreignKey: 'userId' });
+FacebookAccount.belongsTo(User, { foreignKey: 'userId' });
 
 module.exports = { FacebookAccount };
 

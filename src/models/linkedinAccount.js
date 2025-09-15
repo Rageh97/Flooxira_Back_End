@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../sequelize');
+const { User } = require('./user');
 
 const LinkedInAccount = sequelize.define('LinkedInAccount', {
   id: {
@@ -11,7 +12,7 @@ const LinkedInAccount = sequelize.define('LinkedInAccount', {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: 'Users',
+      model: 'users',
       key: 'id'
     }
   },
@@ -59,6 +60,9 @@ const LinkedInAccount = sequelize.define('LinkedInAccount', {
   tableName: 'LinkedInAccounts',
   timestamps: true
 });
+
+User.hasOne(LinkedInAccount, { foreignKey: 'userId' });
+LinkedInAccount.belongsTo(User, { foreignKey: 'userId' });
 
 module.exports = { LinkedInAccount };
 

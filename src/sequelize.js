@@ -23,8 +23,7 @@ if (DIALECT === 'mysql') {
       dialect: 'mysql',
       logging: false,
       dialectOptions: {
-        ssl: { rejectUnauthorized: false },
-        allowPublicKeyRetrieval: true
+        ssl: { rejectUnauthorized: false }
       },
     }
   );
