@@ -41,7 +41,7 @@ app.use('/api/salla', sallaRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/uploads', express.static('uploads'));
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 4000;
 
 async function start() {
   await sequelize.authenticate();
@@ -58,8 +58,8 @@ async function start() {
   }
   // Start scheduler after DB is ready
   try { require('./scheduler').startScheduler(); } catch {}
-  app.listen(port, () => {
-    console.log(`API listening on http://localhost:${port}`);
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`API listening on ${port}`);
   });
 }
 
