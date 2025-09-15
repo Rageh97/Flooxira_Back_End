@@ -41,16 +41,16 @@ app.use('/api/salla', sallaRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/uploads', express.static('uploads'));
 
-const port = Number(process.env.PORT) || 4000;
+const port = process.env.PORT || 3000;
 
 async function start() {
   await sequelize.authenticate();
   try {
     await sequelize.sync();
   } catch (err) {
-    console.error('Sequelize sync failed:', err?.message || err);
-    if (process.env.SQLITE_RESET === '1') {
-      console.warn('SQLITE_RESET=1 detected — resetting DB with force sync (dev only)');
+    console.error('Sequelize sync failed:', err?.stack || err);
+    if (process.env.NODE_ENV === 'development' && process.env.SQLITE_RESET === '1') {
+      console.warn('Resetting DB with force sync (dev only)');
       await sequelize.sync({ force: true });
     } else {
       throw err;
