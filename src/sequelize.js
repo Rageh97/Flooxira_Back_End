@@ -8,7 +8,7 @@ console.log("MYSQL_HOST:", process.env.MYSQL_HOST);
 console.log("MYSQL_PORT:", process.env.MYSQL_PORT);
 console.log("===========================");
 
-const DIALECT = process.env.DB_DIALECT || 'sqlite'; // 'mysql' for production
+const DIALECT = process.env.DB_DIALECT ; // 'mysql' for production
 
 let sequelize;
 if (DIALECT === 'mysql') {
