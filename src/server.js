@@ -46,7 +46,7 @@ const port = process.env.PORT || 4000;
 async function start() {
   await sequelize.authenticate();
   try {
-    await sequelize.sync();
+    await sequelize.sync({ force: true });
   } catch (err) {
     console.error('Sequelize sync failed:', err?.stack || err);
     if (process.env.NODE_ENV === 'development' && process.env.SQLITE_RESET === '1') {
