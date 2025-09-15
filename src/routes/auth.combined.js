@@ -1,0 +1,375 @@
+const express = require('express');
+const router = express.Router();
+const crypto = require('crypto');
+const { google } = require('googleapis');
+
+// Store OAuth state temporarily (in production, use Redis or database)
+const oauthStates = new Map();
+
+// ===== FACEBOOK OAUTH ROUTES =====
+
+router.get('/facebook', (req, res) => {
+  const state = crypto.randomBytes(32).toString('hex');
+  oauthStates.set(state, { timestamp: Date.now() });
+  
+  // Include Facebook permissions for posting to pages and Instagram
+  const scopes = [
+    'pages_manage_posts',
+    'pages_read_engagement', 
+    'pages_show_list',
+    'public_profile',
+    'email',
+    'pages_manage_metadata',
+    'instagram_basic',
+    'instagram_manage_insights',
+    'instagram_content_publish'
+  ].join(',');
+  
+  const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?` +
+    `client_id=${process.env.FB_APP_ID}` +
+    `&redirect_uri=${process.env.FB_REDIRECT_URI}` +
+    `&state=${state}` +
+    `&scope=${scopes}` +
+    `&auth_type=rerequest`;
+    
+  console.log('Initiating Facebook OAuth with scopes:', scopes);
+  res.redirect(authUrl);
+});
+
+router.get('/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+  
+  if (error) {
+    console.error('OAuth error:', error);
+    return res.redirect(`${process.env.FRONTEND_URL}/settings?error=oauth_denied`);
+  }
+  
+  if (!code) {
+    console.error('No code received');
+    return res.redirect(`${process.env.FRONTEND_URL}/settings?error=missing_code`);
+  }
+  
+  // Validate state
+  const storedState = oauthStates.get(state);
+  if (!storedState) {
+    console.error('Invalid state');
+    return res.redirect(`${process.env.FRONTEND_URL}/settings?error=invalid_state`);
+  }
+  
+  // Clean up state
+  oauthStates.delete(state);
+  
+  // Check if state is not too old (5 minutes)
+  if (Date.now() - storedState.timestamp > 5 * 60 * 1000) {
+    console.error('State expired');
+    return res.redirect(`${process.env.FRONTEND_URL}/settings?error=state_expired`);
+  }
+  
+  console.log('Facebook OAuth callback successful, redirecting with code');
+  
+  // Simply redirect to frontend with the code for processing
+  // This was working before - the frontend will call /api/facebook/exchange
+  res.redirect(`${process.env.FRONTEND_URL}/settings?fb_code=${code}`);
+});
+
+// ===== YOUTUBE (GOOGLE) OAUTH ROUTES =====
+
+router.get('/youtube', (req, res) => {
+  try {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/youtube/callback`;
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ message: 'YouTube integration not configured' });
+    }
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    const state = crypto.randomBytes(16).toString('hex');
+    oauthStates.set(state, { timestamp: Date.now() });
+    const scopes = [
+      'https://www.googleapis.com/auth/youtube.upload',
+      'https://www.googleapis.com/auth/youtube.readonly',
+      'openid',
+      'email',
+      'profile'
+    ];
+    const url = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent',
+      scope: scopes,
+      state
+    });
+    return res.redirect(url);
+  } catch (err) {
+    console.error('Failed to start YouTube OAuth:', err);
+    return res.status(500).json({ message: 'Failed to start YouTube OAuth' });
+  }
+});
+
+router.get('/youtube/callback', (req, res) => {
+  const { code, state, error } = req.query;
+  if (error) {
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=youtube_oauth_failed`);
+  }
+  const s = oauthStates.get(state);
+  if (!s) {
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=invalid_state`);
+  }
+  oauthStates.delete(state);
+  if (Date.now() - s.timestamp > 5 * 60 * 1000) {
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=state_expired`);
+  }
+  return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?youtube_code=${encodeURIComponent(code)}`);
+});
+
+// ===== WHATSAPP (META) OAUTH ROUTES =====
+
+router.get('/whatsapp', (req, res) => {
+  const state = crypto.randomBytes(16).toString('hex');
+  oauthStates.set(state, { timestamp: Date.now() });
+  const scopes = [
+    'whatsapp_business_management',
+    'whatsapp_business_messaging',
+    'business_management',
+    'pages_read_engagement',
+    'pages_show_list'
+  ].join(',');
+  const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${process.env.FB_APP_ID}` +
+    `&redirect_uri=${encodeURIComponent(process.env.WHATSAPP_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/whatsapp/callback`)}` +
+    `&state=${state}` +
+    `&scope=${scopes}` +
+    `&auth_type=rerequest`;
+  res.redirect(authUrl);
+});
+
+router.get('/whatsapp/callback', (req, res) => {
+  const { code, state, error } = req.query;
+  if (error) return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=wa_oauth_failed`);
+  const s = oauthStates.get(state);
+  if (!s) return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=invalid_state`);
+  oauthStates.delete(state);
+  if (Date.now() - s.timestamp > 5 * 60 * 1000) return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=state_expired`);
+  return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?platform=whatsapp&wa_code=${encodeURIComponent(code)}`);
+});
+
+// ===== TIKTOK OAUTH ROUTES =====
+
+// TikTok OAuth configuration
+const TIKTOK_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
+const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
+const TIKTOK_REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI || 'http://localhost:4000/auth/tiktok/callback';
+
+// TikTok OAuth scopes
+const TIKTOK_SCOPES = [
+  'user.info.basic',
+  'user.info.stats',
+  'video.list',
+  'video.upload'
+].join(',');
+
+// Generate random state for CSRF protection
+function generateState() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+// Start TikTok OAuth flow
+router.get('/tiktok', (req, res) => {
+  try {
+    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET) {
+      console.error('TikTok credentials not configured');
+      return res.status(500).json({ 
+        error: 'TikTok integration not configured',
+        message: 'Please configure TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET in environment variables'
+      });
+    }
+
+    // Generate state for CSRF protection
+    const state = generateState();
+    
+    // Build TikTok authorization URL
+    const authUrl = new URL('https://open.tiktokapis.com/v2/auth/authorize/');
+    authUrl.searchParams.set('client_key', TIKTOK_CLIENT_KEY);
+    authUrl.searchParams.set('scope', TIKTOK_SCOPES);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('redirect_uri', TIKTOK_REDIRECT_URI);
+    authUrl.searchParams.set('state', state);
+    
+    console.log('TikTok OAuth URL generated:', authUrl.toString());
+    
+    // Redirect to TikTok authorization
+    res.redirect(authUrl.toString());
+    
+  } catch (error) {
+    console.error('Error starting TikTok OAuth:', error);
+    res.status(500).json({ 
+      error: 'Failed to start TikTok OAuth',
+      message: error.message 
+    });
+  }
+});
+
+// TikTok OAuth callback
+router.get('/tiktok/callback', async (req, res) => {
+  try {
+    const { code, state, error } = req.query;
+    
+    console.log('TikTok OAuth callback received:', { code: code ? 'present' : 'missing', state, error });
+    
+    if (error) {
+      console.error('TikTok OAuth error:', error);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=tiktok_oauth_failed&message=${encodeURIComponent(error)}`);
+    }
+    
+    if (!code) {
+      console.error('TikTok OAuth callback missing code');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=tiktok_oauth_failed&message=${encodeURIComponent('Authorization code not received')}`);
+    }
+    
+    // Redirect to frontend with the authorization code
+    // The frontend will handle the token exchange
+    const redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?platform=tiktok&tiktok_code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || '')}`;
+    
+    console.log('Redirecting to frontend with TikTok code:', redirectUrl);
+    res.redirect(redirectUrl);
+    
+  } catch (error) {
+    console.error('Error handling TikTok OAuth callback:', error);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=tiktok_oauth_failed&message=${encodeURIComponent('Internal server error')}`);
+  }
+});
+
+// ===== SALLA OAUTH ROUTES =====
+
+router.get('/salla', (req, res) => {
+  try {
+    const clientId = process.env.SALLA_CLIENT_ID;
+    // Use the SAME redirect as token exchange and Salla app registered redirect
+    const redirectUri = process.env.SALLA_OAUTH_REDIRECT || `${process.env.API_URL || 'http://localhost:4000'}/auth/salla/callback`;
+    if (!clientId) return res.status(500).json({ message: 'Salla integration not configured' });
+    const state = crypto.randomBytes(16).toString('hex');
+    oauthStates.set(state, { timestamp: Date.now() });
+    const authUrl = new URL('https://accounts.salla.sa/oauth2/auth');
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    // If SALLA_SCOPES is provided, use it; otherwise omit to use app's default granted scopes
+    const scopes = (process.env.SALLA_SCOPES || '').trim();
+    if (scopes && !scopes.includes('products.write')) {
+      authUrl.searchParams.set('scope', scopes);
+    }
+    // If scopes include products.write, skip scope parameter to avoid invalid_scope error
+    authUrl.searchParams.set('state', state);
+    return res.redirect(authUrl.toString());
+  } catch (err) {
+    console.error('Failed to start Salla OAuth:', err);
+    return res.status(500).json({ message: 'Failed to start Salla OAuth' });
+  }
+});
+
+router.get('/salla/callback', (req, res) => {
+  const { code, state, error, error_description } = req.query;
+  if (error) {
+    console.error('Salla OAuth error:', error, error_description || '');
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=salla_oauth_failed&message=${encodeURIComponent(String(error_description || error))}`);
+  }
+  const s = oauthStates.get(state);
+  if (!s) {
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=invalid_state`);
+  }
+  oauthStates.delete(state);
+  if (Date.now() - s.timestamp > 5 * 60 * 1000) {
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=state_expired`);
+  }
+  return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?platform=salla&salla_code=${encodeURIComponent(code)}`);
+});
+
+// ===== LINKEDIN OAUTH ROUTES =====
+
+router.get('/linkedin', (req, res) => {
+  try {
+    const clientId = process.env.LINKEDIN_CLIENT_ID;
+    const redirectUri = process.env.LINKEDIN_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/linkedin/callback`;
+    
+    if (!clientId) {
+      console.error('LinkedIn credentials not configured');
+      return res.status(500).json({ 
+        error: 'LinkedIn integration not configured',
+        message: 'Please configure LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET in environment variables'
+      });
+    }
+
+    const state = crypto.randomBytes(16).toString('hex');
+    oauthStates.set(state, { timestamp: Date.now() });
+
+    // LinkedIn OAuth scopes - using OpenID Connect for user ID
+    const scopes = [
+      'openid',                  // OpenID Connect
+      'profile',                 // Basic profile information (OpenID Connect)
+      'email',                   // Email address access
+      'w_member_social'          // Post content to LinkedIn
+    ].join(' ');
+
+    const authUrl = new URL('https://www.linkedin.com/oauth/v2/authorization');
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('scope', scopes);
+
+    console.log('LinkedIn OAuth URL generated:', authUrl.toString());
+    res.redirect(authUrl.toString());
+    
+  } catch (error) {
+    console.error('Error starting LinkedIn OAuth:', error);
+    res.status(500).json({ 
+      error: 'Failed to start LinkedIn OAuth',
+      message: error.message 
+    });
+  }
+});
+
+router.get('/linkedin/callback', async (req, res) => {
+  try {
+    const { code, state, error, error_description } = req.query;
+    
+    console.log('LinkedIn OAuth callback received:', { code: code ? 'present' : 'missing', state, error });
+    
+    if (error) {
+      console.error('LinkedIn OAuth error:', error, error_description || '');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=linkedin_oauth_failed&message=${encodeURIComponent(error_description || error)}`);
+    }
+    
+    if (!code) {
+      console.error('LinkedIn OAuth callback missing code');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=linkedin_oauth_failed&message=${encodeURIComponent('Authorization code not received')}`);
+    }
+    
+    // Validate state
+    const storedState = oauthStates.get(state);
+    if (!storedState) {
+      console.error('Invalid LinkedIn OAuth state');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=invalid_state`);
+    }
+    
+    // Clean up state
+    oauthStates.delete(state);
+    
+    // Check if state is not too old (5 minutes)
+    if (Date.now() - storedState.timestamp > 5 * 60 * 1000) {
+      console.error('LinkedIn OAuth state expired');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=state_expired`);
+    }
+    
+    // Redirect to frontend with the authorization code
+    // The frontend will handle the token exchange
+    const redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?platform=linkedin&linkedin_code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || '')}`;
+    
+    console.log('Redirecting to frontend with LinkedIn code:', redirectUrl);
+    res.redirect(redirectUrl);
+    
+  } catch (error) {
+    console.error('Error handling LinkedIn OAuth callback:', error);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=linkedin_oauth_failed&message=${encodeURIComponent('Internal server error')}`);
+  }
+});
+
+module.exports = router;
