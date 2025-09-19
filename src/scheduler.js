@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const { Post } = require('./models/post');
 const { FacebookAccount } = require('./models/facebookAccount');
 const { LinkedInAccount } = require('./models/linkedinAccount');
+const { PinterestAccount } = require('./models/pinterestAccount');
 const TikTokAccount = require('./models/tiktokAccount');
 const YouTubeAccount = require('./models/youtubeAccount');
 
@@ -129,6 +130,45 @@ async function tryPublishNow(post) {
       } else {
         console.log('No active LinkedIn account found for user:', post.userId);
         post.error = 'No active LinkedIn account found';
+        await post.save();
+      }
+    }
+
+    // Handle Pinterest posting if enabled
+    if (post.platforms.includes('pinterest')) {
+      const pinterestAccount = await PinterestAccount.findOne({ 
+        where: { 
+          userId: post.userId,
+          isActive: true,
+          accessToken: { [require('sequelize').Op.ne]: '' } // Not empty
+        } 
+      });
+      
+      console.log('Pinterest account found:', {
+        exists: !!pinterestAccount,
+        hasToken: !!pinterestAccount?.accessToken,
+        isActive: pinterestAccount?.isActive
+      });
+      
+      if (pinterestAccount && pinterestAccount.accessToken) {
+        try {
+          const pinterestResult = await tryPublishToPinterest(post, pinterestAccount);
+          if (pinterestResult) {
+            post.pinterestPostId = pinterestResult.id;
+            post.status = 'published';
+            post.error = null;
+            await post.save();
+            console.log('Post published to Pinterest successfully');
+            return true;
+          }
+        } catch (pinterestError) {
+          console.error('Pinterest publishing failed:', pinterestError.message);
+          post.error = pinterestError.message;
+          await post.save();
+        }
+      } else {
+        console.log('No active Pinterest account found for user:', post.userId);
+        post.error = 'No active Pinterest account found';
         await post.save();
       }
     }
@@ -363,15 +403,32 @@ async function publishInstagramStory(post, instagramId, token) {
   }
 }
 
+const makeService = require('./services/make.service');
+
 async function tryPublishToFacebook(post, account) {
   try {
     // Check if Facebook account has a valid destination configured
     if (!account.pageId && !account.groupId) {
       throw new Error('No Facebook page or group selected. Please configure Facebook integration in Settings.');
     }
-    
+    if (process.env.USE_MAKE_API === 'true') {
+      // Delegate to Make
+      const publishParams = {
+        pageId: account.pageId,
+        type: post.type,
+        format: post.format,
+        content: post.content,
+        linkUrl: post.linkUrl,
+        mediaUrl: post.mediaUrl,
+        hashtags: post.hashtags
+      };
+      const result = await makeService.publishFacebook(post.userId, publishParams);
+      return result;
+    }
+
+    // Fallback: direct Graph API (legacy)
     if (account.destination === 'group' && account.groupId) {
-      console.log('Publishing to Facebook Group:', account.groupId);
+      // legacy group posting retained as-is
       const groupToken = require('./utils/crypto').decrypt(account.accessToken);
       let url = `https://graph.facebook.com/v21.0/${account.groupId}/feed`;
       let body;
@@ -401,66 +458,12 @@ async function tryPublishToFacebook(post, account) {
         params.set('access_token', groupToken);
         body = params;
       }
-      console.log('Group post URL:', url);
-      console.log('Group post body:', body.toString());
-      
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
       const data = await res.json();
-      console.log('Group post response:', { status: res.status, data });
-      
       if (!res.ok || data.error) throw new Error(data.error?.message || `FB error ${res.status}`);
       return { id: data.id || data.post_id, type: 'group_post' };
     } else if (account.pageId) {
-      console.log('Publishing to Facebook Page:', account.pageId);
-      
-      // Use the stored page token directly
       const pageToken = require('./utils/crypto').decrypt(account.accessToken);
-      console.log('Using stored page token for page:', account.pageId);
-      
-      // Reels (Page only)
-      if (post.format === 'reel') {
-        console.log('Publishing as Reel');
-        if (post.type !== 'video' || !post.mediaUrl) {
-          throw new Error('Reels require a video with a public URL');
-        }
-        
-        // For Reels with public URLs, use the feed endpoint with video_url
-        // This is the correct Facebook API approach for videos with external URLs
-        console.log('Publishing Reel using feed endpoint with video_url...');
-        const feedUrl = `https://graph.facebook.com/v21.0/${account.pageId}/feed`;
-        const feedParams = new URLSearchParams();
-        
-        // Set the message (content + hashtags)
-        if (post.content || post.hashtags) {
-          feedParams.set('message', `${post.content || ''} ${post.hashtags || ''}`.trim());
-        }
-        
-        // Attach the video using video_url parameter
-        feedParams.set('video_url', post.mediaUrl);
-        
-        // Set the format to reel
-        feedParams.set('formatting_style', 'reel');
-        
-        feedParams.set('access_token', pageToken);
-        
-        console.log('Reel feed URL:', feedUrl);
-        console.log('Reel feed params:', feedParams.toString());
-        
-        const feedRes = await fetch(feedUrl, { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, 
-          body: feedParams 
-        });
-        const feedData = await feedRes.json();
-        console.log('Reel feed response:', { status: feedRes.status, data: feedData });
-        
-        if (!feedRes.ok || feedData.error) {
-          throw new Error(feedData.error?.message || `Reel creation failed: ${feedRes.status}`);
-        }
-        
-        return { id: feedData.id || feedData.post_id, type: 'reel' };
-      }
-
       let url = `https://graph.facebook.com/v21.0/${account.pageId}/feed`;
       let body;
       if (post.type === 'text') {
@@ -482,7 +485,6 @@ async function tryPublishToFacebook(post, account) {
         params.set('access_token', pageToken);
         body = params;
       } else if (post.type === 'video') {
-        console.log('Publishing as Video');
         url = `https://graph.facebook.com/v21.0/${account.pageId}/videos`;
         const params = new URLSearchParams();
         params.set('video_url', post.mediaUrl || '');
@@ -490,14 +492,8 @@ async function tryPublishToFacebook(post, account) {
         params.set('access_token', pageToken);
         body = params;
       }
-      
-      console.log('Page post URL:', url);
-      console.log('Page post body:', body.toString());
-      
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
       const data = await res.json();
-      console.log('Page post response:', { status: res.status, data });
-      
       if (!res.ok || data.error) throw new Error(data.error?.message || `FB error ${res.status}`);
       return { id: data.id || data.post_id, type: 'page_post' };
     }
@@ -884,6 +880,97 @@ async function tryPublishToLinkedIn(post, account) {
     return { id: postResult.id, type: 'linkedin_post' };
   } catch (e) {
     console.error('LinkedIn publishing failed:', e);
+    return null;
+  }
+}
+
+async function tryPublishToPinterest(post, account) {
+  try {
+    const accessToken = require('./utils/crypto').decrypt(account.accessToken);
+    console.log('Publishing to Pinterest:', account.username);
+
+    // Pinterest requires a board ID to create a pin
+    // For now, we'll use a default board or the first available board
+    // In a real implementation, you'd want to store the selected board ID in the post
+    const boardId = post.pinterestBoardId || await getDefaultBoardId(accessToken);
+    
+    if (!boardId) {
+      throw new Error('No Pinterest board selected. Please select a board in your Pinterest settings.');
+    }
+
+    // Prepare pin data
+    const pinData = {
+      board_id: boardId,
+      title: post.content || 'Untitled Pin',
+      description: post.content || '',
+      media_source: {
+        source_type: 'image_url',
+        url: post.mediaUrl || post.imageUrl
+      }
+    };
+
+    // Add link if provided
+    if (post.linkUrl) {
+      pinData.link = post.linkUrl;
+    }
+
+    // Add hashtags to description if provided
+    if (post.hashtags) {
+      pinData.description += ` ${post.hashtags}`;
+    }
+
+    console.log('Creating Pinterest pin:', {
+      boardId: pinData.board_id,
+      title: pinData.title,
+      hasImage: !!pinData.media_source.url,
+      hasLink: !!pinData.link
+    });
+
+    const response = await fetch('https://api.pinterest.com/v5/pins', {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(pinData),
+      timeout: 30000
+    });
+
+    const data = await response.json();
+    console.log('Pinterest pin creation response:', { status: response.status, data });
+
+    if (!response.ok || data.error) {
+      throw new Error(data.message || `Pinterest pin creation failed: ${response.status}`);
+    }
+
+    return { id: data.id, type: 'pinterest_pin' };
+  } catch (e) {
+    console.error('Pinterest publishing failed:', e);
+    return null;
+  }
+}
+
+async function getDefaultBoardId(accessToken) {
+  try {
+    // Get user's boards to find a default one
+    const response = await fetch('https://api.pinterest.com/v5/boards', {
+      headers: { 
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000
+    });
+
+    const data = await response.json();
+    
+    if (data.error || !data.items || data.items.length === 0) {
+      return null;
+    }
+
+    // Return the first board ID
+    return data.items[0].id;
+  } catch (error) {
+    console.error('Failed to get default Pinterest board:', error);
     return null;
   }
 }

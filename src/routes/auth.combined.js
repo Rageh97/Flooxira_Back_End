@@ -372,4 +372,94 @@ router.get('/linkedin/callback', async (req, res) => {
   }
 });
 
+// ===== PINTEREST OAUTH ROUTES =====
+
+router.get('/pinterest', (req, res) => {
+  try {
+    const clientId = process.env.PINTEREST_APP_ID;
+    const redirectUri = process.env.PINTEREST_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/pinterest/callback`;
+    
+    if (!clientId) {
+      console.error('Pinterest credentials not configured');
+      return res.status(500).json({ 
+        error: 'Pinterest integration not configured',
+        message: 'Please configure PINTEREST_APP_ID and PINTEREST_APP_SECRET in environment variables'
+      });
+    }
+
+    const state = crypto.randomBytes(16).toString('hex');
+    oauthStates.set(state, { timestamp: Date.now() });
+
+    // Pinterest OAuth scopes
+    const scopes = [
+      'boards:read',
+      'pins:read', 
+      'pins:write',
+      'user_accounts:read'
+    ].join(',');
+
+    const authUrl = new URL('https://www.pinterest.com/oauth/');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', scopes);
+    authUrl.searchParams.set('state', state);
+
+    console.log('Pinterest OAuth URL generated:', authUrl.toString());
+    res.redirect(authUrl.toString());
+    
+  } catch (error) {
+    console.error('Error starting Pinterest OAuth:', error);
+    res.status(500).json({ 
+      error: 'Failed to start Pinterest OAuth',
+      message: error.message 
+    });
+  }
+});
+
+router.get('/pinterest/callback', async (req, res) => {
+  try {
+    const { code, state, error, error_description } = req.query;
+    
+    console.log('Pinterest OAuth callback received:', { code: code ? 'present' : 'missing', state, error });
+    
+    if (error) {
+      console.error('Pinterest OAuth error:', error, error_description || '');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=pinterest_oauth_failed&message=${encodeURIComponent(error_description || error)}`);
+    }
+    
+    if (!code) {
+      console.error('Pinterest OAuth callback missing code');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=pinterest_oauth_failed&message=${encodeURIComponent('Authorization code not received')}`);
+    }
+    
+    // Validate state
+    const storedState = oauthStates.get(state);
+    if (!storedState) {
+      console.error('Invalid Pinterest OAuth state');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=invalid_state`);
+    }
+    
+    // Clean up state
+    oauthStates.delete(state);
+    
+    // Check if state is not too old (5 minutes)
+    if (Date.now() - storedState.timestamp > 5 * 60 * 1000) {
+      console.error('Pinterest OAuth state expired');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=state_expired`);
+    }
+    
+    // Redirect to frontend with the authorization code
+    // The frontend will handle the token exchange
+    const redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?platform=pinterest&pinterest_code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || '')}`;
+    
+    console.log('Redirecting to frontend with Pinterest code:', redirectUrl);
+    res.redirect(redirectUrl);
+    
+  } catch (error) {
+    console.error('Error handling Pinterest OAuth callback:', error);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=pinterest_oauth_failed&message=${encodeURIComponent('Internal server error')}`);
+  }
+});
+
 module.exports = router;
