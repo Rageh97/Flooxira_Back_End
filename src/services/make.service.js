@@ -8,15 +8,31 @@ function requireEnv(name) {
 	return value;
 }
 
+function appendQueryParam(baseUrl, name, value) {
+    try {
+        const u = new URL(baseUrl);
+        u.searchParams.set(name, value);
+        return u.toString();
+    } catch {
+        return baseUrl;
+    }
+}
+
 async function postJson(url, payload) {
     // Optional auth for Make webhooks
     const extraHeaders = {};
     // If explicit header name/value provided, use it
     if (process.env.MAKE_WEBHOOK_AUTH_HEADER_NAME && process.env.MAKE_WEBHOOK_AUTH_HEADER_VALUE) {
         extraHeaders[process.env.MAKE_WEBHOOK_AUTH_HEADER_NAME] = process.env.MAKE_WEBHOOK_AUTH_HEADER_VALUE;
-    } else if (process.env.MAKE_WEBHOOK_SECRET) {
-        // Fallback to Authorization: Bearer <secret>
+    }
+    // Common patterns supported: Authorization Bearer and X-API-Key
+    if (process.env.MAKE_WEBHOOK_SECRET) {
         extraHeaders['Authorization'] = `Bearer ${process.env.MAKE_WEBHOOK_SECRET}`;
+        extraHeaders['X-API-Key'] = process.env.MAKE_WEBHOOK_SECRET;
+    }
+    // Optional query param auth
+    if (process.env.MAKE_WEBHOOK_QUERY_PARAM && process.env.MAKE_WEBHOOK_QUERY_VALUE) {
+        url = appendQueryParam(url, process.env.MAKE_WEBHOOK_QUERY_PARAM, process.env.MAKE_WEBHOOK_QUERY_VALUE);
     }
 
     const res = await fetch(url, {
