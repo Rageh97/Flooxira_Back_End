@@ -9,14 +9,25 @@ function requireEnv(name) {
 }
 
 async function postJson(url, payload) {
-	const res = await fetch(url, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(payload),
-		timeout: 30000
-	});
+    // Optional auth for Make webhooks
+    const extraHeaders = {};
+    // If explicit header name/value provided, use it
+    if (process.env.MAKE_WEBHOOK_AUTH_HEADER_NAME && process.env.MAKE_WEBHOOK_AUTH_HEADER_VALUE) {
+        extraHeaders[process.env.MAKE_WEBHOOK_AUTH_HEADER_NAME] = process.env.MAKE_WEBHOOK_AUTH_HEADER_VALUE;
+    } else if (process.env.MAKE_WEBHOOK_SECRET) {
+        // Fallback to Authorization: Bearer <secret>
+        extraHeaders['Authorization'] = `Bearer ${process.env.MAKE_WEBHOOK_SECRET}`;
+    }
+
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...extraHeaders
+        },
+        body: JSON.stringify(payload),
+        timeout: 30000
+    });
 	const data = await res.json().catch(() => ({}));
 	if (!res.ok) {
 		const message = data?.message || data?.error || `HTTP ${res.status}`;
