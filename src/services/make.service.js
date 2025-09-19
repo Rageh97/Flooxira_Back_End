@@ -26,7 +26,11 @@ async function postJson(url, payload) {
         extraHeaders[process.env.MAKE_WEBHOOK_AUTH_HEADER_NAME] = process.env.MAKE_WEBHOOK_AUTH_HEADER_VALUE;
     }
     // Common patterns supported: Authorization Bearer and X-API-Key
-    if (process.env.MAKE_WEBHOOK_SECRET) {
+    if (process.env.MAKE_WEBHOOK_BASIC_CREDENTIALS) {
+        // Format: username:password
+        const token = Buffer.from(process.env.MAKE_WEBHOOK_BASIC_CREDENTIALS, 'utf8').toString('base64');
+        extraHeaders['Authorization'] = `Basic ${token}`;
+    } else if (process.env.MAKE_WEBHOOK_SECRET) {
         extraHeaders['Authorization'] = `Bearer ${process.env.MAKE_WEBHOOK_SECRET}`;
         extraHeaders['X-API-Key'] = process.env.MAKE_WEBHOOK_SECRET;
     }
@@ -38,7 +42,13 @@ async function postJson(url, payload) {
     // Debug (safe): show URL host and which auth headers applied (names only)
     try {
         const dbgUrl = new URL(url);
-        console.log('[Make] POST', { host: dbgUrl.host, path: dbgUrl.pathname, hasBearer: !!process.env.MAKE_WEBHOOK_SECRET, customHeader: process.env.MAKE_WEBHOOK_AUTH_HEADER_NAME || null, queryAuthParam: process.env.MAKE_WEBHOOK_QUERY_PARAM || null });
+        console.log('[Make] POST', {
+            host: dbgUrl.host,
+            path: dbgUrl.pathname,
+            authMode: process.env.MAKE_WEBHOOK_BASIC_CREDENTIALS ? 'basic' : (process.env.MAKE_WEBHOOK_SECRET ? 'bearer+x-api-key' : 'none'),
+            customHeader: process.env.MAKE_WEBHOOK_AUTH_HEADER_NAME || null,
+            queryAuthParam: process.env.MAKE_WEBHOOK_QUERY_PARAM || null
+        });
     } catch {}
 
     const res = await fetch(url, {
