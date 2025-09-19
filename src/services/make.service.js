@@ -35,6 +35,12 @@ async function postJson(url, payload) {
         url = appendQueryParam(url, process.env.MAKE_WEBHOOK_QUERY_PARAM, process.env.MAKE_WEBHOOK_QUERY_VALUE);
     }
 
+    // Debug (safe): show URL host and which auth headers applied (names only)
+    try {
+        const dbgUrl = new URL(url);
+        console.log('[Make] POST', { host: dbgUrl.host, path: dbgUrl.pathname, hasBearer: !!process.env.MAKE_WEBHOOK_SECRET, customHeader: process.env.MAKE_WEBHOOK_AUTH_HEADER_NAME || null, queryAuthParam: process.env.MAKE_WEBHOOK_QUERY_PARAM || null });
+    } catch {}
+
     const res = await fetch(url, {
         method: 'POST',
         headers: {
@@ -44,12 +50,16 @@ async function postJson(url, payload) {
         body: JSON.stringify(payload),
         timeout: 30000
     });
-	const data = await res.json().catch(() => ({}));
-	if (!res.ok) {
-		const message = data?.message || data?.error || `HTTP ${res.status}`;
-		throw new Error(`Make webhook failed: ${message}`);
-	}
-	return data;
+    let text;
+    try { text = await res.text(); } catch { text = ''; }
+    let data;
+    try { data = JSON.parse(text); } catch { data = {}; }
+    if (!res.ok) {
+        console.error('[Make] Webhook error', { status: res.status, body: text?.slice(0, 500) });
+        const message = data?.message || data?.error || text || `HTTP ${res.status}`;
+        throw new Error(`Make webhook failed: ${message}`);
+    }
+    return data;
 }
 
 async function getFacebookPages(userId) {
