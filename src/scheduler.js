@@ -196,8 +196,20 @@ async function tryPublishToInstagram(post, account) {
       return null;
     }
     
+    // Validate post data
+    if (!post.mediaUrl && post.type !== 'text') {
+      console.log('Instagram post missing media URL:', { type: post.type, hasMedia: !!post.mediaUrl });
+      throw new Error('Instagram requires media content');
+    }
+    
     const token = require('./utils/crypto').decrypt(account.accessToken);
-    console.log('Publishing to Instagram:', account.instagramId);
+    console.log('Publishing to Instagram:', { 
+      instagramId: account.instagramId, 
+      postType: post.type, 
+      format: post.format,
+      hasMedia: !!post.mediaUrl,
+      contentLength: post.content?.length || 0
+    });
     
     // Instagram API endpoints
     const instagramId = account.instagramId;
@@ -216,16 +228,17 @@ async function tryPublishToInstagram(post, account) {
 }
 
 async function publishInstagramPost(post, instagramId, token) {
-  console.log('Publishing Instagram post');
+  console.log('Publishing Instagram post', { type: post.type, hasMedia: !!post.mediaUrl });
   
   if (post.type === 'photo') {
-    // Create media container
+    // Create media container for photo
     const mediaResponse = await fetch(
       `https://graph.facebook.com/v21.0/${instagramId}/media`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
+          media_type: 'IMAGE',
           image_url: post.mediaUrl,
           caption: `${post.content || ''} ${post.hashtags || ''}`.trim(),
           access_token: token
@@ -234,7 +247,12 @@ async function publishInstagramPost(post, instagramId, token) {
     );
     
     const mediaData = await mediaResponse.json();
-    if (mediaData.error) throw new Error(mediaData.error.message);
+    console.log('Instagram media creation response:', mediaData);
+    
+    if (mediaData.error) {
+      console.error('Instagram media creation error:', mediaData.error);
+      throw new Error(mediaData.error.message);
+    }
     
     // Publish the media
     const publishResponse = await fetch(
@@ -250,7 +268,12 @@ async function publishInstagramPost(post, instagramId, token) {
     );
     
     const publishData = await publishResponse.json();
-    if (publishData.error) throw new Error(publishData.error.message);
+    console.log('Instagram publish response:', publishData);
+    
+    if (publishData.error) {
+      console.error('Instagram publish error:', publishData.error);
+      throw new Error(publishData.error.message);
+    }
     
     return { id: publishData.id, type: 'post' };
   } else if (post.type === 'video') {
@@ -263,14 +286,19 @@ async function publishInstagramPost(post, instagramId, token) {
         body: new URLSearchParams({
           media_type: 'VIDEO',
           video_url: post.mediaUrl,
-          description: `${post.content || ''} ${post.hashtags || ''}`.trim(),
+          caption: `${post.content || ''} ${post.hashtags || ''}`.trim(),
           access_token: token
         })
       }
     );
     
     const mediaData = await mediaResponse.json();
-    if (mediaData.error) throw new Error(mediaData.error.message);
+    console.log('Instagram video creation response:', mediaData);
+    
+    if (mediaData.error) {
+      console.error('Instagram video creation error:', mediaData.error);
+      throw new Error(mediaData.error.message);
+    }
     
     // Publish the video
     const publishResponse = await fetch(
@@ -286,28 +314,18 @@ async function publishInstagramPost(post, instagramId, token) {
     );
     
     const publishData = await publishResponse.json();
-    if (publishData.error) throw new Error(publishData.error.message);
+    console.log('Instagram video publish response:', publishData);
+    
+    if (publishData.error) {
+      console.error('Instagram video publish error:', publishData.error);
+      throw new Error(publishData.error.message);
+    }
     
     return { id: publishData.id, type: 'video_post' };
   } else {
-    // Text post
-    const response = await fetch(
-      `https://graph.facebook.com/v21.0/${instagramId}/media`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          media_type: 'CAROUSEL_ALBUM',
-          caption: `${post.content || ''} ${post.hashtags || ''}`.trim(),
-          access_token: token
-        })
-      }
-    );
-    
-    const data = await response.json();
-    if (data.error) throw new Error(data.error.message);
-    
-    return { id: data.id, type: 'text_post' };
+    // Text posts are not supported by Instagram API - convert to photo with text overlay
+    console.log('Text post detected - Instagram requires media, skipping...');
+    throw new Error('Instagram requires media content. Text-only posts are not supported.');
   }
 }
 
@@ -327,14 +345,19 @@ async function publishInstagramReel(post, instagramId, token) {
       body: new URLSearchParams({
         media_type: 'REELS',
         video_url: post.mediaUrl,
-        description: `${post.content || ''} ${post.hashtags || ''}`.trim(),
+        caption: `${post.content || ''} ${post.hashtags || ''}`.trim(),
         access_token: token
       })
     }
   );
   
   const mediaData = await mediaResponse.json();
-  if (mediaData.error) throw new Error(mediaData.error.message);
+  console.log('Instagram Reel creation response:', mediaData);
+  
+  if (mediaData.error) {
+    console.error('Instagram Reel creation error:', mediaData.error);
+    throw new Error(mediaData.error.message);
+  }
   
   // Publish the reel
   const publishResponse = await fetch(
@@ -350,7 +373,12 @@ async function publishInstagramReel(post, instagramId, token) {
   );
   
   const publishData = await publishResponse.json();
-  if (publishData.error) throw new Error(publishData.error.message);
+  console.log('Instagram Reel publish response:', publishData);
+  
+  if (publishData.error) {
+    console.error('Instagram Reel publish error:', publishData.error);
+    throw new Error(publishData.error.message);
+  }
   
   return { id: publishData.id, type: 'reel' };
 }
@@ -375,7 +403,12 @@ async function publishInstagramStory(post, instagramId, token) {
     );
     
     const mediaData = await mediaResponse.json();
-    if (mediaData.error) throw new Error(mediaData.error.message);
+    console.log('Instagram Story creation response:', mediaData);
+    
+    if (mediaData.error) {
+      console.error('Instagram Story creation error:', mediaData.error);
+      throw new Error(mediaData.error.message);
+    }
     
     return { id: mediaData.id, type: 'story' };
   } else if (post.type === 'video') {
@@ -388,14 +421,19 @@ async function publishInstagramStory(post, instagramId, token) {
         body: new URLSearchParams({
           media_type: 'STORY',
           video_url: post.mediaUrl,
-          description: post.content || '',
+          caption: post.content || '',
           access_token: token
         })
       }
     );
     
     const mediaData = await mediaResponse.json();
-    if (mediaData.error) throw new Error(mediaData.error.message);
+    console.log('Instagram Story video creation response:', mediaData);
+    
+    if (mediaData.error) {
+      console.error('Instagram Story video creation error:', mediaData.error);
+      throw new Error(mediaData.error.message);
+    }
     
     return { id: mediaData.id, type: 'video_story' };
   } else {
