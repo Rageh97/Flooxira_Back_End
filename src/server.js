@@ -21,7 +21,7 @@ const linkedinRoutes = require('./routes/linkedin.routes');
 const pinterestRoutes = require('./routes/pinterest.routes');
 
 const app = express();
-app.use(cors());
+app.use(cors(  {origin:true, credentials:true}));
 app.use(express.json());
 app.use(cookieParser());
 
