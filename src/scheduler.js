@@ -403,15 +403,32 @@ async function publishInstagramStory(post, instagramId, token) {
   }
 }
 
+const makeService = require('./services/make.service');
+
 async function tryPublishToFacebook(post, account) {
   try {
     // Check if Facebook account has a valid destination configured
     if (!account.pageId && !account.groupId) {
       throw new Error('No Facebook page or group selected. Please configure Facebook integration in Settings.');
     }
-    
+    if (process.env.USE_MAKE_API === 'true') {
+      // Delegate to Make
+      const publishParams = {
+        pageId: account.pageId,
+        type: post.type,
+        format: post.format,
+        content: post.content,
+        linkUrl: post.linkUrl,
+        mediaUrl: post.mediaUrl,
+        hashtags: post.hashtags
+      };
+      const result = await makeService.publishFacebook(post.userId, publishParams);
+      return result;
+    }
+
+    // Fallback: direct Graph API (legacy)
     if (account.destination === 'group' && account.groupId) {
-      console.log('Publishing to Facebook Group:', account.groupId);
+      // legacy group posting retained as-is
       const groupToken = require('./utils/crypto').decrypt(account.accessToken);
       let url = `https://graph.facebook.com/v21.0/${account.groupId}/feed`;
       let body;
@@ -441,66 +458,12 @@ async function tryPublishToFacebook(post, account) {
         params.set('access_token', groupToken);
         body = params;
       }
-      console.log('Group post URL:', url);
-      console.log('Group post body:', body.toString());
-      
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
       const data = await res.json();
-      console.log('Group post response:', { status: res.status, data });
-      
       if (!res.ok || data.error) throw new Error(data.error?.message || `FB error ${res.status}`);
       return { id: data.id || data.post_id, type: 'group_post' };
     } else if (account.pageId) {
-      console.log('Publishing to Facebook Page:', account.pageId);
-      
-      // Use the stored page token directly
       const pageToken = require('./utils/crypto').decrypt(account.accessToken);
-      console.log('Using stored page token for page:', account.pageId);
-      
-      // Reels (Page only)
-      if (post.format === 'reel') {
-        console.log('Publishing as Reel');
-        if (post.type !== 'video' || !post.mediaUrl) {
-          throw new Error('Reels require a video with a public URL');
-        }
-        
-        // For Reels with public URLs, use the feed endpoint with video_url
-        // This is the correct Facebook API approach for videos with external URLs
-        console.log('Publishing Reel using feed endpoint with video_url...');
-        const feedUrl = `https://graph.facebook.com/v21.0/${account.pageId}/feed`;
-        const feedParams = new URLSearchParams();
-        
-        // Set the message (content + hashtags)
-        if (post.content || post.hashtags) {
-          feedParams.set('message', `${post.content || ''} ${post.hashtags || ''}`.trim());
-        }
-        
-        // Attach the video using video_url parameter
-        feedParams.set('video_url', post.mediaUrl);
-        
-        // Set the format to reel
-        feedParams.set('formatting_style', 'reel');
-        
-        feedParams.set('access_token', pageToken);
-        
-        console.log('Reel feed URL:', feedUrl);
-        console.log('Reel feed params:', feedParams.toString());
-        
-        const feedRes = await fetch(feedUrl, { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, 
-          body: feedParams 
-        });
-        const feedData = await feedRes.json();
-        console.log('Reel feed response:', { status: feedRes.status, data: feedData });
-        
-        if (!feedRes.ok || feedData.error) {
-          throw new Error(feedData.error?.message || `Reel creation failed: ${feedRes.status}`);
-        }
-        
-        return { id: feedData.id || feedData.post_id, type: 'reel' };
-      }
-
       let url = `https://graph.facebook.com/v21.0/${account.pageId}/feed`;
       let body;
       if (post.type === 'text') {
@@ -522,7 +485,6 @@ async function tryPublishToFacebook(post, account) {
         params.set('access_token', pageToken);
         body = params;
       } else if (post.type === 'video') {
-        console.log('Publishing as Video');
         url = `https://graph.facebook.com/v21.0/${account.pageId}/videos`;
         const params = new URLSearchParams();
         params.set('video_url', post.mediaUrl || '');
@@ -530,14 +492,8 @@ async function tryPublishToFacebook(post, account) {
         params.set('access_token', pageToken);
         body = params;
       }
-      
-      console.log('Page post URL:', url);
-      console.log('Page post body:', body.toString());
-      
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
       const data = await res.json();
-      console.log('Page post response:', { status: res.status, data });
-      
       if (!res.ok || data.error) throw new Error(data.error?.message || `FB error ${res.status}`);
       return { id: data.id || data.post_id, type: 'page_post' };
     }
