@@ -21,36 +21,44 @@ const linkedinRoutes = require('./routes/linkedin.routes');
 const pinterestRoutes = require('./routes/pinterest.routes');
 
 const app = express();
-// CORS configuration - fixed for credentials support
+// CORS configuration - comprehensive setup
+const allowedOrigins = [
+  'https://www.flooxira.com',
+  'https://flooxira.com',
+  'http://localhost:3000',
+  'http://localhost:3001'
+];
+
 app.use((req, res, next) => {
   console.log('Request origin:', req.headers.origin);
   console.log('Request method:', req.method);
-  
-  const allowedOrigins = [
-    'https://www.flooxira.com',
-    'https://flooxira.com',
-    'http://localhost:3000',
-    'http://localhost:3001'
-  ];
+  console.log('Request URL:', req.url);
   
   const origin = req.headers.origin;
   
+  // Set CORS headers
   if (allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
   } else if (!origin) {
     // Allow requests with no origin (like Postman, curl)
     res.header('Access-Control-Allow-Origin', '*');
+  } else {
+    console.log('CORS blocked origin:', origin);
   }
   
-  res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie, X-Requested-With, Accept');
+  res.header('Access-Control-Max-Age', '86400'); // 24 hours
   
+  // Handle preflight requests
   if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
+    console.log('Handling preflight request');
+    res.status(200).end();
+    return;
   }
+  
+  next();
 });
 
 app.use(express.json());
@@ -58,6 +66,20 @@ app.use(cookieParser());
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get('/api/test-cors', (_req, res) => {
+  res.json({ 
+    message: 'CORS test successful', 
+    timestamp: new Date().toISOString(),
+    origin: _req.headers.origin 
+  });
+});
+
+// Handle OPTIONS requests for all API routes
+app.options('/api/*', (req, res) => {
+  console.log('Handling API preflight request for:', req.url);
+  res.status(200).end();
 });
 
 app.use('/api/auth', authRoutes);
