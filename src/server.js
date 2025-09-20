@@ -21,12 +21,27 @@ const linkedinRoutes = require('./routes/linkedin.routes');
 const pinterestRoutes = require('./routes/pinterest.routes');
 
 const app = express();
-// CORS configuration - explicit setup for older cors package
+// CORS configuration - fixed for credentials support
 app.use((req, res, next) => {
   console.log('Request origin:', req.headers.origin);
   console.log('Request method:', req.method);
   
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const allowedOrigins = [
+    'https://www.flooxira.com',
+    'https://flooxira.com',
+    'http://localhost:3000',
+    'http://localhost:3001'
+  ];
+  
+  const origin = req.headers.origin;
+  
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    // Allow requests with no origin (like Postman, curl)
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie, X-Requested-With, Accept');
@@ -37,12 +52,6 @@ app.use((req, res, next) => {
     next();
   }
 });
-
-// Also use cors middleware as backup
-app.use(cors({
-  origin: true,
-  credentials: true
-}));
 
 app.use(express.json());
 app.use(cookieParser());
