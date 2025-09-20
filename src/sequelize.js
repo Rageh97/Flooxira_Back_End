@@ -33,4 +33,5 @@ if (DIALECT === 'mysql') {
   sequelize = new Sequelize({ dialect: 'sqlite', storage, logging: false });
 }
 
+
 module.exports = { sequelize };

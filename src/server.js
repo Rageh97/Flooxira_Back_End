@@ -18,6 +18,7 @@ const whatsappRoutes = require('./routes/whatsapp.routes');
 const youtubeRoutes = require('./routes/youtube.routes');
 const sallaRoutes = require('./routes/salla.routes');
 const linkedinRoutes = require('./routes/linkedin.routes');
+const pinterestRoutes = require('./routes/pinterest.routes');
 
 const app = express();
 app.use(cors());
@@ -39,6 +40,7 @@ app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/youtube', youtubeRoutes);
 app.use('/api/salla', sallaRoutes);
 app.use('/api/linkedin', linkedinRoutes);
+app.use('/api/pinterest', pinterestRoutes);
 app.use('/uploads', express.static('uploads'));
 
 const port = process.env.PORT || 4000;

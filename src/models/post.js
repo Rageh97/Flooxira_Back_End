@@ -79,6 +79,15 @@ const Post = sequelize.define('Post', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  // Pinterest fields
+  pinterestPostId: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  pinterestBoardId: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   // Platform selection
   platforms: {
     type: DataTypes.JSON,

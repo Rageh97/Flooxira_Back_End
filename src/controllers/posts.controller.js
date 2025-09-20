@@ -23,7 +23,7 @@ async function createPost(req, res) {
     hashtags, 
     format = 'feed', 
     scheduledAt,
-    platforms = ['facebook'] // Default to Facebook, can include 'instagram'
+    platforms = ['facebook'] // Default to Facebook, can include 'instagram', 'pinterest', 'linkedin', 'tiktok', 'youtube'
   } = req.body;
   const effectiveMediaUrl = mediaUrl || imageUrl || null;
   
@@ -115,7 +115,7 @@ async function stats(req, res) {
   ]);
   
   // Platform-specific stats - using SQLite-compatible JSON operations
-  const [facebookPosts, instagramPosts, linkedinPosts] = await Promise.all([
+  const [facebookPosts, instagramPosts, linkedinPosts, pinterestPosts] = await Promise.all([
     Post.count({ 
       where: { 
         userId,
@@ -133,6 +133,12 @@ async function stats(req, res) {
         userId,
         platforms: require('sequelize').literal(`JSON_EXTRACT(platforms, '$') LIKE '%"linkedin"%'`)
       } 
+    }),
+    Post.count({ 
+      where: { 
+        userId,
+        platforms: require('sequelize').literal(`JSON_EXTRACT(platforms, '$') LIKE '%"pinterest"%'`)
+      } 
     })
   ]);
   
@@ -143,7 +149,8 @@ async function stats(req, res) {
     failed,
     facebookPosts,
     instagramPosts,
-    linkedinPosts
+    linkedinPosts,
+    pinterestPosts
   });
 }
 
