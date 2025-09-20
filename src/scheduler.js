@@ -403,32 +403,16 @@ async function publishInstagramStory(post, instagramId, token) {
   }
 }
 
-const makeService = require('./services/make.service');
-
 async function tryPublishToFacebook(post, account) {
   try {
     // Check if Facebook account has a valid destination configured
     if (!account.pageId && !account.groupId) {
       throw new Error('No Facebook page or group selected. Please configure Facebook integration in Settings.');
     }
-    if (process.env.USE_MAKE_API === 'true') {
-      // Delegate to Make
-      const publishParams = {
-        pageId: account.pageId,
-        type: post.type,
-        format: post.format,
-        content: post.content,
-        linkUrl: post.linkUrl,
-        mediaUrl: post.mediaUrl,
-        hashtags: post.hashtags
-      };
-      const result = await makeService.publishFacebook(post.userId, publishParams);
-      return result;
-    }
 
-    // Fallback: direct Graph API (legacy)
+    // Use Meta Graph API directly
     if (account.destination === 'group' && account.groupId) {
-      // legacy group posting retained as-is
+      // Group posting via Graph API
       const groupToken = require('./utils/crypto').decrypt(account.accessToken);
       let url = `https://graph.facebook.com/v21.0/${account.groupId}/feed`;
       let body;
@@ -463,6 +447,7 @@ async function tryPublishToFacebook(post, account) {
       if (!res.ok || data.error) throw new Error(data.error?.message || `FB error ${res.status}`);
       return { id: data.id || data.post_id, type: 'group_post' };
     } else if (account.pageId) {
+      // Page posting via Graph API
       const pageToken = require('./utils/crypto').decrypt(account.accessToken);
       let url = `https://graph.facebook.com/v21.0/${account.pageId}/feed`;
       let body;

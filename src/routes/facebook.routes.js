@@ -12,7 +12,6 @@ const {
   testFacebookConnection,
   disconnectFacebook
 } = require('../controllers/facebook.controller');
-const { getFacebookPagesMake, selectFacebookPageMake } = require('../controllers/facebook.make.controller');
 
 const router = Router();
 
@@ -28,11 +27,11 @@ router.get('/account', getFacebookAccount);
 // Test Facebook connection
 router.get('/test', testFacebookConnection);
 
-// Get Facebook pages (Make-based)
-router.get('/pages', process.env.USE_MAKE_API === 'true' ? getFacebookPagesMake : getFacebookPages);
+// Get Facebook pages
+router.get('/pages', getFacebookPages);
 
-// Select a Facebook page (Make-based)
-router.post('/select-page', process.env.USE_MAKE_API === 'true' ? selectFacebookPageMake : selectFacebookPage);
+// Select a Facebook page
+router.post('/select-page', selectFacebookPage);
 
 // Get Facebook groups
 router.get('/groups', getFacebookGroups);
