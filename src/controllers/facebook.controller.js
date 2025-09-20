@@ -1269,19 +1269,42 @@ async function selectInstagramAccount(req, res) {
   try {
     const { pageId, instagramId, accessToken } = req.body;
     
-    if (!pageId || !instagramId || !accessToken) {
-      return res.status(400).json({ message: 'pageId, instagramId, and accessToken are required' });
+    if (!pageId || !instagramId) {
+      return res.status(400).json({ message: 'pageId and instagramId are required' });
     }
+    
+    // If no accessToken provided, try to get it from the user's Facebook account
+    let tokenToUse = accessToken;
+    if (!tokenToUse) {
+      const userAccount = await FacebookAccount.findOne({ where: { userId: req.userId } });
+      if (!userAccount || !userAccount.accessToken) {
+        return res.status(400).json({ message: 'No Facebook account connected. Please connect your Facebook account first.' });
+      }
+      tokenToUse = crypto.decrypt(userAccount.accessToken);
+    }
+    
+    console.log('Selecting Instagram account:', { pageId, instagramId, hasToken: !!tokenToUse });
     
     // Get Instagram account details
     const instagramResponse = await fetch(
-      `https://graph.facebook.com/v21.0/${instagramId}?fields=id,username,media_count&access_token=${accessToken}`
+      `https://graph.facebook.com/v21.0/${instagramId}?fields=id,username,media_count&access_token=${tokenToUse}`,
+      { timeout: 10000 }
     );
+    
+    if (!instagramResponse.ok) {
+      const errorText = await instagramResponse.text();
+      console.error('Instagram API error:', errorText);
+      return res.status(400).json({ message: `Failed to get Instagram account details: ${errorText}` });
+    }
+    
     const instagramData = await instagramResponse.json();
     
     if (instagramData.error) {
+      console.error('Instagram API error:', instagramData.error);
       return res.status(400).json({ message: instagramData.error.message });
     }
+    
+    console.log('Instagram account details:', instagramData);
     
     // Update or create Facebook account with Instagram info
     const [account, created] = await FacebookAccount.findOrCreate({
@@ -1291,8 +1314,8 @@ async function selectInstagramAccount(req, res) {
         pageId: pageId,
         instagramId: instagramId,
         instagramUsername: instagramData.username,
-        destination: 'instagram',
-        accessToken: crypto.encrypt(accessToken)
+        destination: 'page', // Keep as page since it's still a Facebook page
+        accessToken: crypto.encrypt(tokenToUse)
       }
     });
     
@@ -1300,10 +1323,12 @@ async function selectInstagramAccount(req, res) {
       account.pageId = pageId;
       account.instagramId = instagramId;
       account.instagramUsername = instagramData.username;
-      account.destination = 'instagram';
-      account.accessToken = crypto.encrypt(accessToken);
+      account.destination = 'page'; // Keep as page since it's still a Facebook page
+      account.accessToken = crypto.encrypt(tokenToUse);
       await account.save();
     }
+    
+    console.log('Instagram account selected successfully');
     
     return res.json({
       success: true,
@@ -1313,7 +1338,7 @@ async function selectInstagramAccount(req, res) {
     });
   } catch (error) {
     console.error('Error selecting Instagram account:', error);
-    return res.status(500).json({ message: 'Failed to select Instagram account' });
+    return res.status(500).json({ message: 'Failed to select Instagram account', error: error.message });
   }
 }
 
