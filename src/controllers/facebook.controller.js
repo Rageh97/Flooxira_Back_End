@@ -668,15 +668,23 @@ async function getFacebookPages(req, res) {
 
 async function selectFacebookPage(req, res) {
   try {
-    const { pageId, accessToken } = req.body;
+    const { pageId, pageName } = req.body;
     
-    if (!pageId || !accessToken) {
-      return res.status(400).json({ message: 'pageId and accessToken are required' });
+    if (!pageId) {
+      return res.status(400).json({ message: 'pageId is required' });
     }
     
-    // Get page details
+    // Get the user's Facebook account to get the access token
+    const userAccount = await FacebookAccount.findOne({ where: { userId: req.userId } });
+    if (!userAccount || !userAccount.accessToken) {
+      return res.status(400).json({ message: 'No Facebook account connected. Please connect your Facebook account first.' });
+    }
+    
+    const userAccessToken = crypto.decrypt(userAccount.accessToken);
+    
+    // Get page details and verify the user has access to this page
     const pageResponse = await fetch(
-      `https://graph.facebook.com/v21.0/${pageId}?fields=name&access_token=${accessToken}`
+      `https://graph.facebook.com/v21.0/${pageId}?fields=name,access_token&access_token=${userAccessToken}`
     );
     const pageData = await pageResponse.json();
     
@@ -684,28 +692,30 @@ async function selectFacebookPage(req, res) {
       return res.status(400).json({ message: pageData.error.message });
     }
     
-    // Update or create Facebook account
+    // Update or create Facebook account with page-specific token
     const [account, created] = await FacebookAccount.findOrCreate({
       where: { userId: req.userId },
       defaults: {
         userId: req.userId,
         pageId: pageId,
         destination: 'page',
-        accessToken: crypto.encrypt(accessToken)
+        accessToken: crypto.encrypt(pageData.access_token || userAccessToken),
+        name: pageData.name || pageName
       }
     });
     
     if (!created) {
       account.pageId = pageId;
       account.destination = 'page';
-      account.accessToken = crypto.encrypt(accessToken);
+      account.accessToken = crypto.encrypt(pageData.access_token || userAccessToken);
+      account.name = pageData.name || pageName;
       await account.save();
     }
     
     return res.json({
       success: true,
       pageId: pageId,
-      pageName: pageData.name
+      pageName: pageData.name || pageName
     });
   } catch (error) {
     console.error('Error selecting Facebook page:', error);
