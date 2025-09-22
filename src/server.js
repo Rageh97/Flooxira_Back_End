@@ -19,6 +19,7 @@ const youtubeRoutes = require('./routes/youtube.routes');
 const sallaRoutes = require('./routes/salla.routes');
 const linkedinRoutes = require('./routes/linkedin.routes');
 const pinterestRoutes = require('./routes/pinterest.routes');
+const axios = require('axios');
 
 const app = express();
 // CORS configuration - comprehensive setup
@@ -95,6 +96,83 @@ app.use('/api/salla', sallaRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/pinterest', pinterestRoutes);
 app.use('/uploads', express.static('uploads'));
+
+// Lightweight endpoint for Facebook connect with tester handling
+app.post('/connect-facebook', async (req, res) => {
+  try {
+    const { authCode, facebookUserId } = req.body || {};
+    if (!authCode) {
+      return res.status(400).json({ status: 'error', message: 'authCode is required' });
+    }
+
+    const APP_ID = process.env.FB_APP_ID || process.env.APP_ID;
+    const APP_SECRET = process.env.FB_APP_SECRET || process.env.APP_SECRET;
+    const REDIRECT_URI = process.env.FB_REDIRECT_URI || process.env.REDIRECT_URI;
+
+    if (!APP_ID || !APP_SECRET || !REDIRECT_URI) {
+      console.error('Missing Facebook app configuration');
+      return res.status(500).json({ status: 'error', message: 'Server configuration error' });
+    }
+
+    try {
+      // 1) Exchange code for short-lived token
+      const tokenResp = await axios.post(
+        'https://graph.facebook.com/v21.0/oauth/access_token',
+        new URLSearchParams({
+          client_id: APP_ID,
+          client_secret: APP_SECRET,
+          redirect_uri: REDIRECT_URI,
+          code: authCode
+        }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 15000 }
+      );
+
+      const accessToken = tokenResp.data?.access_token;
+
+      // 2) Fetch user profile
+      const meResp = await axios.get('https://graph.facebook.com/v21.0/me', {
+        params: { access_token: accessToken, fields: 'id,name,email' },
+        timeout: 15000
+      });
+
+      return res.json({ status: 'success', user: meResp.data });
+    } catch (err) {
+      const status = err?.response?.status;
+      const fbErr = err?.response?.data?.error;
+      const message = fbErr?.message || err?.message || 'Facebook error';
+      console.error('Facebook connect error:', { status, message, fbErr });
+
+      // Handle development mode case
+      const isDevMode = status === 403 && /development mode/i.test(message || '');
+      if (isDevMode && facebookUserId) {
+        try {
+          const appAccessToken = `${APP_ID}|${APP_SECRET}`;
+          await axios.post(
+            `https://graph.facebook.com/${APP_ID}/roles`,
+            new URLSearchParams({ user: String(facebookUserId), role: 'testers' }),
+            { params: { access_token: appAccessToken }, timeout: 15000 }
+          );
+          return res.json({ status: 'pending', message: 'تمت إضافتك كتستر.. أعد المحاولة بعد قليل' });
+        } catch (addErr) {
+          const addStatus = addErr?.response?.status;
+          const addMsg = addErr?.response?.data?.error?.message || addErr?.message;
+          console.error('Add tester failed:', { addStatus, addMsg });
+          return res.json({
+            status: 'invite',
+            message: 'تمت دعوتك كتستر.. افتح صفحة الدعوات على فيسبوك وقم بالقبول',
+            acceptUrl: `https://developers.facebook.com/apps/${APP_ID}/roles/testers/`
+          });
+        }
+      }
+
+      // Other errors
+      return res.status(400).json({ status: 'error', message });
+    }
+  } catch (e) {
+    console.error('Unhandled /connect-facebook error:', e);
+    return res.status(500).json({ status: 'error', message: 'Internal server error' });
+  }
+});
 
 const port = process.env.PORT || 4000;
 
