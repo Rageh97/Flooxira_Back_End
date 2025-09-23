@@ -148,11 +148,39 @@ async function getBoards(req, res) {
     
     const data = await response.json();
     
-    if (data.error) {
-      return res.status(400).json({ message: data.message || 'Failed to get boards' });
+    if (!response.ok || data.error) {
+      return res.status(400).json({ message: data.message || 'Failed to get boards', raw: data });
     }
-    
-    const boards = data.items.map(board => ({
+    const items = Array.isArray(data.items) ? data.items : [];
+
+    // Auto-create a default board in sandbox/trial if none exist and flag enabled
+    if (items.length === 0 && String(process.env.PINTEREST_AUTO_CREATE_BOARD) === '1') {
+      try {
+        const createResp = await fetch(`${pinterestBase}/v5/boards`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ name: 'SocialManage', description: 'Default board created by SocialManage' })
+        });
+        const createData = await createResp.json();
+        if (createResp.ok && createData?.id) {
+          items.push({
+            id: createData.id,
+            name: createData.name || 'SocialManage',
+            description: createData.description || '',
+            privacy: createData.privacy || 'PUBLIC',
+            pin_count: 0,
+            follower_count: 0
+          });
+        }
+      } catch (e) {
+        // ignore auto-create errors; just return empty list
+      }
+    }
+
+    const boards = items.map(board => ({
       id: board.id,
       name: board.name,
       description: board.description,
