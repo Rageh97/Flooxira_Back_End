@@ -390,9 +390,10 @@ router.get('/pinterest', (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     oauthStates.set(state, { timestamp: Date.now() });
 
-    // Pinterest OAuth scopes
+    // Pinterest OAuth scopes (include boards:write for pin creation)
     const scopes = [
       'boards:read',
+      'boards:write',
       'pins:read', 
       'pins:write',
       'user_accounts:read'
