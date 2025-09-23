@@ -173,13 +173,22 @@ async function tryPublishNow(post) {
       }
     }
 
-    // Dev fallback: mark as published locally
-    console.log('No Facebook account found or configured, using dev fallback');
-    post.fbPostId = `dev_${post.id}`;
-    post.status = 'published';
-    post.error = null;
+    // If we reach here, none of the enabled platforms succeeded
+    // Only allow a fallback when explicitly enabled via environment variable
+    if (String(process.env.DEV_PUBLISH_FALLBACK) === '1') {
+      console.log('DEV_PUBLISH_FALLBACK enabled - marking as published for local dev');
+      post.fbPostId = `dev_${post.id}`;
+      post.status = 'published';
+      post.error = null;
+      await post.save();
+      return true;
+    }
+
+    console.log('No platforms succeeded for this post; marking as failed');
+    post.status = 'failed';
+    post.error = post.error || 'No platform could publish this post';
     await post.save();
-    return true;
+    return false;
   } catch (e) {
     console.error('Failed to publish post:', e);
     post.status = 'failed';
