@@ -61,7 +61,7 @@ async function exchangeCode(req, res) {
     const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
     const userResponse = await fetch(`${pinterestBase}/v5/user_account`, {
       headers: { 
-        'Authorization': `Bearer ${tokenData.access_token}`,
+        'Authorization': `Bearer ${process.env.PINTEREST_TEST_ACCESS_TOKEN || tokenData.access_token}`,
         'Content-Type': 'application/json'
       }
     });
@@ -135,7 +135,7 @@ async function getBoards(req, res) {
       return res.status(400).json({ message: 'No Pinterest account connected' });
     }
     
-    const token = crypto.decrypt(account.accessToken);
+    const token = process.env.PINTEREST_TEST_ACCESS_TOKEN || crypto.decrypt(account.accessToken);
     
     // Get user's boards - try preferred base first, then alternate (prod/sandbox) as fallback
     const preferredBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
@@ -254,7 +254,7 @@ async function createPin(req, res) {
       return res.status(400).json({ message: 'No Pinterest account connected' });
     }
     
-    const token = crypto.decrypt(account.accessToken);
+    const token = process.env.PINTEREST_TEST_ACCESS_TOKEN || crypto.decrypt(account.accessToken);
     
     // Create pin data
     const pinData = {
@@ -314,7 +314,7 @@ async function getPins(req, res) {
       return res.status(400).json({ message: 'No Pinterest account connected' });
     }
     
-    const token = crypto.decrypt(account.accessToken);
+    const token = process.env.PINTEREST_TEST_ACCESS_TOKEN || crypto.decrypt(account.accessToken);
     
     const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
     let url = `${pinterestBase}/v5/pins`;
@@ -359,7 +359,7 @@ async function testPinterestConnection(req, res) {
       return res.status(400).json({ message: 'No Pinterest account connected' });
     }
     
-    const token = crypto.decrypt(account.accessToken);
+    const token = process.env.PINTEREST_TEST_ACCESS_TOKEN || crypto.decrypt(account.accessToken);
     
     // Simple test to check if token is valid
     const testResponse = await fetch('https://api.pinterest.com/v5/user_account', {

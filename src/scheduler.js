@@ -918,8 +918,11 @@ async function tryPublishToLinkedIn(post, account) {
 
 async function tryPublishToPinterest(post, account) {
   try {
-    const accessToken = require('./utils/crypto').decrypt(account.accessToken);
-    const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+    const cryptoUtil = require('./utils/crypto');
+    let accessToken = process.env.PINTEREST_TEST_ACCESS_TOKEN || cryptoUtil.decrypt(account.accessToken);
+    const pinterestBasePreferred = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+    const pinterestBaseAlternate = pinterestBasePreferred.includes('api-sandbox') ? 'https://api.pinterest.com' : 'https://api-sandbox.pinterest.com';
+    const basesToTry = [pinterestBasePreferred, pinterestBaseAlternate];
     console.log('Publishing to Pinterest:', account.username);
 
     // Pinterest requires a board ID to create a pin
@@ -958,25 +961,75 @@ async function tryPublishToPinterest(post, account) {
       hasImage: !!pinData.media_source.url,
       hasLink: !!pinData.link
     });
+    let lastError;
+    for (const base of basesToTry) {
+      try {
+        let response = await fetch(`${base}/v5/pins`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(pinData),
+          timeout: 30000
+        });
+        let data = await response.json();
+        console.log('Pinterest pin creation response:', { base, status: response.status, data });
 
-    const response = await fetch(`${pinterestBase}/v5/pins`, {
-      method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(pinData),
-      timeout: 30000
-    });
+        // If unauthorized, try refresh token once then retry on same base
+        if (response.status === 401 && account.refreshToken) {
+          try {
+            const rt = cryptoUtil.decrypt(account.refreshToken);
+            const tokenResp = await fetch('https://api.pinterest.com/v5/oauth/token', {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': `Basic ${Buffer.from(`${process.env.PINTEREST_APP_ID}:${process.env.PINTEREST_APP_SECRET}`).toString('base64')}`
+              },
+              body: new URLSearchParams({
+                grant_type: 'refresh_token',
+                refresh_token: rt
+              })
+            });
+            const tdata = await tokenResp.json();
+            if (tokenResp.ok && tdata?.access_token) {
+              // Persist new token
+              try {
+                const { PinterestAccount } = require('./models/pinterestAccount');
+                const dbAcc = await PinterestAccount.findOne({ where: { id: account.id } });
+                if (dbAcc) {
+                  dbAcc.accessToken = cryptoUtil.encrypt(tdata.access_token);
+                  if (tdata.refresh_token) dbAcc.refreshToken = cryptoUtil.encrypt(tdata.refresh_token);
+                  dbAcc.tokenExpiresAt = tdata.expires_in ? new Date(Date.now() + tdata.expires_in * 1000) : null;
+                  await dbAcc.save();
+                }
+              } catch {}
+              accessToken = tdata.access_token;
+              // retry once
+              response = await fetch(`${base}/v5/pins`, {
+                method: 'POST',
+                headers: { 
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(pinData),
+                timeout: 30000
+              });
+              data = await response.json();
+              console.log('Pinterest retry response:', { base, status: response.status, data });
+            }
+          } catch {}
+        }
 
-    const data = await response.json();
-    console.log('Pinterest pin creation response:', { status: response.status, data });
-
-    if (!response.ok || data.error) {
-      throw new Error(data.message || `Pinterest pin creation failed: ${response.status}`);
+        if (response.ok && !data?.error) {
+          return { id: data.id, type: 'pinterest_pin' };
+        }
+        lastError = new Error(data?.message || `Pinterest pin creation failed: ${response.status}`);
+      } catch (e) {
+        lastError = e;
+      }
     }
-
-    return { id: data.id, type: 'pinterest_pin' };
+    throw lastError || new Error('Pinterest pin creation failed');
   } catch (e) {
     console.error('Pinterest publishing failed:', e);
     return null;
