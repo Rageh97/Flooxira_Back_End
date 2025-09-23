@@ -921,8 +921,8 @@ async function tryPublishToPinterest(post, account) {
     const cryptoUtil = require('./utils/crypto');
     let accessToken = process.env.PINTEREST_TEST_ACCESS_TOKEN || cryptoUtil.decrypt(account.accessToken);
     const pinterestBasePreferred = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
-    const pinterestBaseAlternate = pinterestBasePreferred.includes('api-sandbox') ? 'https://api.pinterest.com' : 'https://api-sandbox.pinterest.com';
-    const basesToTry = [pinterestBasePreferred, pinterestBaseAlternate];
+    // In production-only mode, don't flip bases to avoid cross-environment token errors
+    const basesToTry = [pinterestBasePreferred];
     console.log('Publishing to Pinterest:', account.username);
 
     // Pinterest requires a board ID to create a pin
@@ -968,7 +968,8 @@ async function tryPublishToPinterest(post, account) {
           method: 'POST',
           headers: { 
             'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-Pinterest-Client-Id': String(process.env.PINTEREST_APP_ID || '')
           },
           body: JSON.stringify(pinData),
           timeout: 30000
@@ -1010,7 +1011,8 @@ async function tryPublishToPinterest(post, account) {
                 method: 'POST',
                 headers: { 
                   'Authorization': `Bearer ${accessToken}`,
-                  'Content-Type': 'application/json'
+                  'Content-Type': 'application/json',
+                  'X-Pinterest-Client-Id': String(process.env.PINTEREST_APP_ID || '')
                 },
                 body: JSON.stringify(pinData),
                 timeout: 30000
