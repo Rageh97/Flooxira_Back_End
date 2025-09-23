@@ -139,17 +139,48 @@ async function getBoards(req, res) {
     
     // Get user's boards
     const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
-    const response = await fetch(`${pinterestBase}/v5/boards`, {
+    let response = await fetch(`${pinterestBase}/v5/boards`, {
       headers: { 
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       }
     });
     
+    // If unauthorized, try refresh token once
+    if (response.status === 401 && account.refreshToken) {
+      try {
+        const rt = crypto.decrypt(account.refreshToken);
+        const tokenResp = await fetch('https://api.pinterest.com/v5/oauth/token', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Authorization': `Basic ${Buffer.from(`${process.env.PINTEREST_APP_ID}:${process.env.PINTEREST_APP_SECRET}`).toString('base64')}`
+          },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: rt
+          })
+        });
+        const tdata = await tokenResp.json();
+        if (tokenResp.ok && tdata?.access_token) {
+          account.accessToken = crypto.encrypt(tdata.access_token);
+          if (tdata.refresh_token) account.refreshToken = crypto.encrypt(tdata.refresh_token);
+          account.tokenExpiresAt = tdata.expires_in ? new Date(Date.now() + tdata.expires_in * 1000) : null;
+          await account.save();
+          response = await fetch(`${pinterestBase}/v5/boards`, {
+            headers: { 
+              'Authorization': `Bearer ${tdata.access_token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+        }
+      } catch {}
+    }
+
     const data = await response.json();
     
     if (!response.ok || data.error) {
-      return res.status(400).json({ message: data.message || 'Failed to get boards', raw: data });
+      return res.status(400).json({ message: data.message || 'Failed to get boards', status: response.status, raw: data });
     }
     const items = Array.isArray(data.items) ? data.items : [];
 
