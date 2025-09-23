@@ -137,17 +137,32 @@ async function getBoards(req, res) {
     
     const token = crypto.decrypt(account.accessToken);
     
-    // Get user's boards
-    const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
-    let response = await fetch(`${pinterestBase}/v5/boards`, {
-      headers: { 
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
+    // Get user's boards - try preferred base first, then alternate (prod/sandbox) as fallback
+    const preferredBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+    const alternateBase = preferredBase.includes('api-sandbox') ? 'https://api.pinterest.com' : 'https://api-sandbox.pinterest.com';
+    const basesToTry = [preferredBase, alternateBase];
+    let response = null;
+    let data = null;
+    for (const base of basesToTry) {
+      try {
+        response = await fetch(`${base}/v5/boards`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        data = await response.json();
+        if (response.ok && Array.isArray(data?.items)) {
+          // Use first successful base
+          break;
+        }
+      } catch {
+        // try next base
       }
-    });
+    }
     
-    // If unauthorized, try refresh token once
-    if (response.status === 401 && account.refreshToken) {
+    // If unauthorized, try refresh token once against preferred base
+    if (response && response.status === 401 && account.refreshToken) {
       try {
         const rt = crypto.decrypt(account.refreshToken);
         const tokenResp = await fetch('https://api.pinterest.com/v5/oauth/token', {
@@ -167,22 +182,21 @@ async function getBoards(req, res) {
           if (tdata.refresh_token) account.refreshToken = crypto.encrypt(tdata.refresh_token);
           account.tokenExpiresAt = tdata.expires_in ? new Date(Date.now() + tdata.expires_in * 1000) : null;
           await account.save();
-          response = await fetch(`${pinterestBase}/v5/boards`, {
+          response = await fetch(`${preferredBase}/v5/boards`, {
             headers: { 
               'Authorization': `Bearer ${tdata.access_token}`,
               'Content-Type': 'application/json'
             }
           });
+          data = await response.json();
         }
       } catch {}
     }
-
-    const data = await response.json();
     
     if (!response.ok || data.error) {
       return res.status(400).json({ message: data.message || 'Failed to get boards', status: response.status, raw: data });
     }
-    const items = Array.isArray(data.items) ? data.items : [];
+    const items = Array.isArray(data?.items) ? data.items : [];
 
     // Auto-create a default board in sandbox/trial if none exist and flag enabled
     if (items.length === 0 && String(process.env.PINTEREST_AUTO_CREATE_BOARD) === '1') {
