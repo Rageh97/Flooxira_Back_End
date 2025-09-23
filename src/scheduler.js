@@ -919,6 +919,7 @@ async function tryPublishToLinkedIn(post, account) {
 async function tryPublishToPinterest(post, account) {
   try {
     const accessToken = require('./utils/crypto').decrypt(account.accessToken);
+    const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
     console.log('Publishing to Pinterest:', account.username);
 
     // Pinterest requires a board ID to create a pin
@@ -958,7 +959,7 @@ async function tryPublishToPinterest(post, account) {
       hasLink: !!pinData.link
     });
 
-    const response = await fetch('https://api.pinterest.com/v5/pins', {
+    const response = await fetch(`${pinterestBase}/v5/pins`, {
       method: 'POST',
       headers: { 
         'Authorization': `Bearer ${accessToken}`,
@@ -985,7 +986,8 @@ async function tryPublishToPinterest(post, account) {
 async function getDefaultBoardId(accessToken) {
   try {
     // Get user's boards to find a default one
-    const response = await fetch('https://api.pinterest.com/v5/boards', {
+    const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+    const response = await fetch(`${pinterestBase}/v5/boards`, {
       headers: { 
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'

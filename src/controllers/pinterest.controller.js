@@ -58,7 +58,8 @@ async function exchangeCode(req, res) {
     console.log('Pinterest token received, getting user info...');
     
     // Get user info
-    const userResponse = await fetch('https://api.pinterest.com/v5/user_account', {
+    const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+    const userResponse = await fetch(`${pinterestBase}/v5/user_account`, {
       headers: { 
         'Authorization': `Bearer ${tokenData.access_token}`,
         'Content-Type': 'application/json'
@@ -137,7 +138,8 @@ async function getBoards(req, res) {
     const token = crypto.decrypt(account.accessToken);
     
     // Get user's boards
-    const response = await fetch('https://api.pinterest.com/v5/boards', {
+    const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+    const response = await fetch(`${pinterestBase}/v5/boards`, {
       headers: { 
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -197,7 +199,8 @@ async function createPin(req, res) {
       pinData.link = linkUrl;
     }
     
-    const response = await fetch('https://api.pinterest.com/v5/pins', {
+    const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+    const response = await fetch(`${pinterestBase}/v5/pins`, {
       method: 'POST',
       headers: { 
         'Authorization': `Bearer ${token}`,
@@ -240,9 +243,10 @@ async function getPins(req, res) {
     
     const token = crypto.decrypt(account.accessToken);
     
-    let url = 'https://api.pinterest.com/v5/pins';
+    const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+    let url = `${pinterestBase}/v5/pins`;
     if (boardId) {
-      url = `https://api.pinterest.com/v5/boards/${boardId}/pins`;
+      url = `${pinterestBase}/v5/boards/${boardId}/pins`;
     }
     
     const response = await fetch(url, {
