@@ -23,7 +23,8 @@ async function createPost(req, res) {
     hashtags, 
     format = 'feed', 
     scheduledAt,
-    platforms = ['facebook'] // Default to Facebook, can include 'instagram', 'pinterest', 'linkedin', 'tiktok', 'youtube'
+    platforms = ['facebook'], // Default to Facebook, can include 'instagram', 'pinterest', 'linkedin', 'tiktok', 'youtube'
+    pinterestBoardId
   } = req.body;
   const effectiveMediaUrl = mediaUrl || imageUrl || null;
   
@@ -69,7 +70,8 @@ async function createPost(req, res) {
     format, 
     scheduledAt: scheduledAt || null, 
     status,
-    platforms
+    platforms,
+    pinterestBoardId: pinterestBoardId || null
   });
   
   // If no schedule provided, publish immediately
