@@ -12,7 +12,7 @@ const TIKTOK_SCOPES = [
   'user.info.stats',
   'video.list',
   'video.upload'
-].join(',');
+].join(' ');
 
 // Generate random state for CSRF protection
 function generateState() {
