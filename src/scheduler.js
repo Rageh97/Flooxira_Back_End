@@ -543,50 +543,56 @@ async function tryPublishToTikTok(post, account) {
     const token = account.accessToken;
     console.log('Publishing to TikTok:', account.username);
     
-    // TikTok API endpoint for video upload
-    const uploadUrl = 'https://open.tiktokapis.com/v2/video/upload/';
-    
-    // Prepare the video data using URLSearchParams for now
-    // Note: TikTok API might require different approach for video uploads
-    const params = new URLSearchParams();
-    
-    // Add post content and hashtags
-    if (post.content || post.hashtags) {
-      params.set('description', `${post.content || ''} ${post.hashtags || ''}`.trim());
+    if (post.type !== 'video' || !post.mediaUrl) {
+      throw new Error('TikTok requires a video mediaUrl');
     }
-    
-    // Set privacy (0 = public, 1 = friends, 2 = private)
-    params.set('privacy_level', '0');
-    
-    // Set disable duet, comment, and stitch (0 = enabled, 1 = disabled)
-    params.set('disable_duet', '0');
-    params.set('disable_comment', '0');
-    params.set('disable_stitch', '0');
-    
+
+    // Download the video from mediaUrl
+    const videoResp = await fetch(post.mediaUrl);
+    if (!videoResp.ok) {
+      throw new Error(`Failed to fetch video from mediaUrl: ${videoResp.status}`);
+    }
+    const videoBuffer = Buffer.from(await videoResp.arrayBuffer());
+
+    // Prepare multipart form-data for TikTok upload
+    const form = new FormData();
+    const videoBlob = new Blob([videoBuffer], { type: 'video/mp4' });
+    form.append('video', videoBlob, 'video.mp4');
+    const description = `${post.content || ''} ${post.hashtags || ''}`.trim();
+    if (description) form.append('description', description);
+    form.append('privacy_level', '0'); // public
+    form.append('disable_duet', '0');
+    form.append('disable_comment', '0');
+    form.append('disable_stitch', '0');
+
+    const uploadUrl = 'https://open.tiktokapis.com/v2/video/upload/';
     console.log('TikTok upload URL:', uploadUrl);
-    console.log('TikTok upload data:', {
-      description: params.get('description'),
-      privacy_level: params.get('privacy_level'),
-      hasVideo: !!post.mediaUrl
-    });
-    
+    console.log('TikTok upload meta:', { hasDescription: !!description, sizeBytes: videoBuffer.length });
+
     const response = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Authorization': `Bearer ${token}`
+        // NOTE: do not set Content-Type; fetch will set correct multipart boundary
       },
-      body: params
+      body: form
     });
-    
-    const data = await response.json();
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      const text = await response.text();
+      console.error('TikTok non-JSON response:', { status: response.status, text: text?.slice(0, 500) });
+      throw new Error(`TikTok upload unexpected response ${response.status}`);
+    }
     console.log('TikTok upload response:', { status: response.status, data });
-    
+
     if (!response.ok || data.error) {
       throw new Error(data.error?.message || `TikTok upload failed: ${response.status}`);
     }
-    
-    return { id: data.data.video_id, type: 'tiktok_video' };
+
+    return { id: data.data?.video_id || data.data?.id, type: 'tiktok_video' };
     
   } catch (e) {
     console.error('TikTok publishing failed:', e);
