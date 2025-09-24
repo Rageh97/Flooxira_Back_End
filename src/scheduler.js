@@ -547,28 +547,58 @@ async function tryPublishToTikTok(post, account) {
       throw new Error('TikTok requires a video mediaUrl');
     }
 
-    // Download the video from mediaUrl
+    // TikTok v2 upload requires a two-step process: initialize then upload
+    const description = `${post.content || ''} ${post.hashtags || ''}`.trim();
+    
+    // Step 1: Initialize upload
+    const initUrl = 'https://open.tiktokapis.com/v2/post/publish/video/init/';
+    const initResponse = await fetch(initUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        post_info: {
+          title: description || 'Social Media Post',
+          description: description || '',
+          privacy_level: 'MUTUAL_FOLLOW_FRIEND',
+          disable_duet: false,
+          disable_comment: false,
+          disable_stitch: false,
+          video_cover_timestamp_ms: 1000
+        }
+      })
+    });
+
+    const initData = await initResponse.json();
+    console.log('TikTok init response:', { status: initResponse.status, data: initData });
+
+    if (!initResponse.ok || initData.error) {
+      throw new Error(initData.error?.message || `TikTok init failed: ${initResponse.status}`);
+    }
+
+    const publishId = initData.data.publish_id;
+    if (!publishId) {
+      throw new Error('TikTok init did not return publish_id');
+    }
+
+    // Step 2: Upload video file
     const videoResp = await fetch(post.mediaUrl);
     if (!videoResp.ok) {
       throw new Error(`Failed to fetch video from mediaUrl: ${videoResp.status}`);
     }
     const videoBuffer = Buffer.from(await videoResp.arrayBuffer());
 
-    // Prepare multipart form-data for TikTok upload
+    const uploadUrl = 'https://open.tiktokapis.com/v2/post/publish/video/upload/';
     const form = new FormData();
     const videoBlob = new Blob([videoBuffer], { type: 'video/mp4' });
     form.append('video', videoBlob, 'video.mp4');
-    const description = `${post.content || ''} ${post.hashtags || ''}`.trim();
-    if (description) form.append('description', description);
-    form.append('privacy_level', '0'); // public
-    form.append('disable_duet', '0');
-    form.append('disable_comment', '0');
-    form.append('disable_stitch', '0');
-
-    const uploadUrl = 'https://open.tiktokapis.com/v2/video/upload/';
+    form.append('publish_id', publishId);
+    
     console.log('TikTok upload URL:', uploadUrl);
-    console.log('TikTok upload meta:', { hasDescription: !!description, sizeBytes: videoBuffer.length });
-
+    console.log('TikTok upload meta:', { publishId, hasDescription: !!description, sizeBytes: videoBuffer.length });
+    
     const response = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
@@ -589,12 +619,32 @@ async function tryPublishToTikTok(post, account) {
       console.error('TikTok non-JSON response:', { status: response.status, text: responseText?.slice(0, 500) });
       throw new Error(`TikTok upload unexpected response ${response.status}: ${responseText?.slice(0, 200)}`);
     }
-
+    
     if (!response.ok || data.error) {
       throw new Error(data.error?.message || `TikTok upload failed: ${response.status}`);
     }
+    
+    // Step 3: Publish the video
+    const publishUrl = 'https://open.tiktokapis.com/v2/post/publish/';
+    const publishResponse = await fetch(publishUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        publish_id: publishId
+      })
+    });
 
-    return { id: data.data?.video_id || data.data?.id, type: 'tiktok_video' };
+    const publishData = await publishResponse.json();
+    console.log('TikTok publish response:', { status: publishResponse.status, data: publishData });
+
+    if (!publishResponse.ok || publishData.error) {
+      throw new Error(publishData.error?.message || `TikTok publish failed: ${publishResponse.status}`);
+    }
+
+    return { id: publishData.data?.publish_id || publishId, type: 'tiktok_video' };
     
   } catch (e) {
     console.error('TikTok publishing failed:', e);
