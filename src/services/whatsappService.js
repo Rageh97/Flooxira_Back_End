@@ -454,14 +454,42 @@ class WhatsAppService {
         return false;
       }
 
-      if (client.info && client.info.wid) {
-        await client.sendMessage(to, message);
-        console.log(`[WA] Response sent successfully to ${to}`);
-        return true;
-      } else {
-        console.log(`[WA] Client not ready for user ${userId}`);
+      // Ensure client is connected
+      try {
+        const state = await client.getState();
+        if (state !== 'CONNECTED') {
+          console.log(`[WA] Client state is ${state} for user ${userId}; cannot send message now.`);
+          return false;
+        }
+      } catch (e) {
+        console.log(`[WA] Could not verify client state before sending for user ${userId}:`, e?.message || e);
         return false;
       }
+
+      // Resolve destination chat id
+      let chatId = to;
+      if (!String(to).includes('@')) {
+        const digits = String(to).replace(/\D/g, '');
+        if (!digits) {
+          console.log('[WA] Invalid destination number provided');
+          return false;
+        }
+        try {
+          const numberId = await client.getNumberId(digits);
+          if (!numberId) {
+            console.log(`[WA] Number ${digits} is not a valid WhatsApp user`);
+            return false;
+          }
+          chatId = numberId._serialized; // e.g. 15551234567@c.us
+        } catch (resolveErr) {
+          console.log(`[WA] Failed to resolve numberId for ${digits}:`, resolveErr?.message || resolveErr);
+          return false;
+        }
+      }
+
+      await client.sendMessage(chatId, message);
+      console.log(`[WA] Message sent successfully to ${chatId}`);
+      return true;
     } catch (error) {
       console.error(`[WA] Send message failed:`, error);
       return false;
