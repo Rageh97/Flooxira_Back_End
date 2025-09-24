@@ -64,10 +64,10 @@ class WhatsAppService {
       const state = this.userStates.get(userId);
       if (state?.initializing) {
         return {
-          success: false,
+          success: true,
           message: 'WhatsApp session is already initializing',
-          qrCode: null,
-          status: 'initializing'
+          qrCode: this.qrCodes.get(userId) || null,
+          status: this.qrCodes.get(userId) ? 'qr_generated' : 'initializing'
         };
       }
 
@@ -118,7 +118,6 @@ class WhatsAppService {
             '--disable-extensions',
             '--disable-plugins',
             '--disable-images',
-            '--disable-javascript',
             '--disable-web-security',
             '--disable-features=VizDisplayCompositor',
             '--disable-blink-features=AutomationControlled',
