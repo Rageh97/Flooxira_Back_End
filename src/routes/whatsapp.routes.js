@@ -1,29 +1,27 @@
 const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
-const ctrl = require('../controllers/whatsapp.business.controller');
-const { exchangeMetaCode } = require('../web/whatsapp.oauth');
+const whatsappCtrl = require('../controllers/whatsapp.controller');
 
 const router = Router();
 
 router.use(requireAuth);
 
-// Configure WABA creds (phoneNumberId, token, optional verify token)
-router.post('/configure', ctrl.configure);
-// Status of configuration
-router.get('/status', ctrl.status);
-// Send message (simple text for now)
-router.post('/send', ctrl.sendMessage);
-// Knowledge base
-router.post('/knowledge/upload', ctrl.upload.single('file'), ctrl.uploadKnowledgeBase);
-router.get('/knowledge', ctrl.getKnowledgeBase);
-router.delete('/knowledge/:id', ctrl.deleteKnowledgeEntry);
+// WhatsApp Web Routes
+router.post('/start', whatsappCtrl.startWhatsAppSession);
+router.get('/status', whatsappCtrl.getWhatsAppStatus);
+router.get('/qr', whatsappCtrl.getQRCode);
+router.post('/stop', whatsappCtrl.stopWhatsAppSession);
+router.post('/send', whatsappCtrl.sendWhatsAppMessage);
 
-// OAuth code exchange (after /auth/whatsapp callback redirects with code)
-router.post('/exchange', requireAuth, exchangeMetaCode);
+// Chat Management Routes
+router.get('/chats', whatsappCtrl.getChatHistory);
+router.get('/contacts', whatsappCtrl.getChatContacts);
+router.get('/stats', whatsappCtrl.getBotStats);
 
-// Webhooks (do not require auth)
-router.get('/webhook', ctrl.webhookVerify);
-router.post('/webhook', ctrl.webhookReceive);
+// Knowledge base for WhatsApp Web
+router.post('/knowledge/upload', whatsappCtrl.upload.single('file'), whatsappCtrl.uploadKnowledgeBase);
+router.get('/knowledge', whatsappCtrl.getKnowledgeBase);
+router.delete('/knowledge/:id', whatsappCtrl.deleteKnowledgeEntry);
 
 module.exports = router;
 

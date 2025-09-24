@@ -121,35 +121,6 @@ router.get('/youtube/callback', (req, res) => {
   return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?youtube_code=${encodeURIComponent(code)}`);
 });
 
-// ===== WHATSAPP (META) OAUTH ROUTES =====
-
-router.get('/whatsapp', (req, res) => {
-  const state = crypto.randomBytes(16).toString('hex');
-  oauthStates.set(state, { timestamp: Date.now() });
-  const scopes = [
-    'whatsapp_business_management',
-    'whatsapp_business_messaging',
-    'business_management',
-    'pages_read_engagement',
-    'pages_show_list'
-  ].join(',');
-  const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${process.env.FB_APP_ID}` +
-    `&redirect_uri=${encodeURIComponent(process.env.WHATSAPP_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/whatsapp/callback`)}` +
-    `&state=${state}` +
-    `&scope=${scopes}` +
-    `&auth_type=rerequest`;
-  res.redirect(authUrl);
-});
-
-router.get('/whatsapp/callback', (req, res) => {
-  const { code, state, error } = req.query;
-  if (error) return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=wa_oauth_failed`);
-  const s = oauthStates.get(state);
-  if (!s) return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=invalid_state`);
-  oauthStates.delete(state);
-  if (Date.now() - s.timestamp > 5 * 60 * 1000) return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=state_expired`);
-  return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?platform=whatsapp&wa_code=${encodeURIComponent(code)}`);
-});
 
 // ===== TIKTOK OAUTH ROUTES =====
 

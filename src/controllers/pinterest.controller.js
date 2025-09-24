@@ -362,7 +362,8 @@ async function testPinterestConnection(req, res) {
     const token = process.env.PINTEREST_TEST_ACCESS_TOKEN || crypto.decrypt(account.accessToken);
     
     // Simple test to check if token is valid
-    const testResponse = await fetch('https://api.pinterest.com/v5/user_account', {
+    const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+    const testResponse = await fetch(`${pinterestBase}/v5/user_account`, {
       headers: { 
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -371,9 +372,11 @@ async function testPinterestConnection(req, res) {
     });
     
     if (!testResponse.ok) {
+      const raw = await testResponse.text().catch(() => '');
       return res.status(400).json({ 
         message: 'Pinterest token is invalid or expired',
-        status: testResponse.status 
+        status: testResponse.status,
+        raw
       });
     }
     
