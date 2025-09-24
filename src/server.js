@@ -216,7 +216,29 @@ const port = process.env.PORT || 4000;
 async function start() {
   await sequelize.authenticate();
   try {
-    await sequelize.sync({ force: true });
+    // Configure sync behavior via env to avoid destructive drops in production
+    const dbSyncMode = (process.env.DB_SYNC || '').toLowerCase();
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    /**
+     * dbSyncMode options:
+     * - 'force': drop and recreate tables (DEV ONLY)
+     * - 'alter': safe in-place schema sync (preferred for DEV/STAGING)
+     * - anything else / empty: do not alter schema (PRODUCTION default)
+     */
+    const syncOptions =
+      dbSyncMode === 'force'
+        ? { force: true }
+        : dbSyncMode === 'alter'
+          ? { alter: true }
+          : {}; // default: no destructive or automatic changes
+
+    // In production, never allow force sync regardless of env value
+    if (isProduction && 'force' in syncOptions) {
+      delete syncOptions.force;
+    }
+
+    await sequelize.sync(syncOptions);
   } catch (err) {
     console.error('Sequelize sync failed:', err?.stack || err);
     if (process.env.NODE_ENV === 'development' && process.env.SQLITE_RESET === '1') {
