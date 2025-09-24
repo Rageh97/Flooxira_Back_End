@@ -454,16 +454,14 @@ class WhatsAppService {
         return false;
       }
 
-      // Ensure client is connected
+      // Prefer to be connected, but if state check fails we will still attempt to send
       try {
         const state = await client.getState();
         if (state !== 'CONNECTED') {
-          console.log(`[WA] Client state is ${state} for user ${userId}; cannot send message now.`);
-          return false;
+          console.log(`[WA] Client state is ${state} for user ${userId}; will attempt send anyway.`);
         }
       } catch (e) {
         console.log(`[WA] Could not verify client state before sending for user ${userId}:`, e?.message || e);
-        return false;
       }
 
       // Resolve destination chat id
@@ -487,9 +485,26 @@ class WhatsAppService {
         }
       }
 
-      await client.sendMessage(chatId, message);
-      console.log(`[WA] Message sent successfully to ${chatId}`);
-      return true;
+      const attemptSend = async () => {
+        await client.sendMessage(chatId, message);
+        console.log(`[WA] Message sent successfully to ${chatId}`);
+      };
+
+      try {
+        await attemptSend();
+        return true;
+      } catch (sendErr) {
+        console.log(`[WA] First send attempt failed to ${chatId}:`, sendErr?.message || sendErr);
+        // Retry once after short delay
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          await attemptSend();
+          return true;
+        } catch (retryErr) {
+          console.log(`[WA] Retry send failed to ${chatId}:`, retryErr?.message || retryErr);
+          return false;
+        }
+      }
     } catch (error) {
       console.error(`[WA] Send message failed:`, error);
       return false;
