@@ -36,8 +36,8 @@ router.get('/tiktok', (req, res) => {
     // Store state in session or temporary storage (you might want to use Redis in production)
     // For now, we'll pass it as a query parameter to the frontend
     
-    // Build TikTok authorization URL
-    const authUrl = new URL('https://www.tiktok.com/auth/authorize/');
+  // Build TikTok authorization URL (v2)
+  const authUrl = new URL('https://www.tiktok.com/v2/auth/authorize/');
     authUrl.searchParams.set('client_key', TIKTOK_CLIENT_KEY);
     authUrl.searchParams.set('scope', TIKTOK_SCOPES);
     authUrl.searchParams.set('response_type', 'code');

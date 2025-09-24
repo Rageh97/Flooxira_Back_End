@@ -156,8 +156,8 @@ router.get('/tiktok', (req, res) => {
     // Generate state for CSRF protection
     const state = generateState();
     
-    // Build TikTok authorization URL
-    const authUrl = new URL('https://open.tiktokapis.com/v2/auth/authorize/');
+    // Build TikTok authorization URL (v2)
+    const authUrl = new URL('https://www.tiktok.com/v2/auth/authorize/');
     authUrl.searchParams.set('client_key', TIKTOK_CLIENT_KEY);
     authUrl.searchParams.set('scope', TIKTOK_SCOPES);
     authUrl.searchParams.set('response_type', 'code');
