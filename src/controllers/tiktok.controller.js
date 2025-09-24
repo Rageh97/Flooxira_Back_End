@@ -4,7 +4,7 @@ const crypto = require('../utils/crypto');
 // TikTok API configuration
 const TIKTOK_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
 const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
-const TIKTOK_REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI || 'http://localhost:3000/settings?platform=tiktok';
+const TIKTOK_REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI || 'http://localhost:4000/auth/tiktok/callback';
 
 // Exchange TikTok OAuth code for access token
 async function exchangeCode(req, res) {
@@ -45,8 +45,17 @@ async function exchangeCode(req, res) {
     
     console.log('TikTok access token received, getting user info...');
     
-    // Get user info using the access token
-    const userResponse = await fetch('https://open.tiktokapis.com/v2/user/info/', {
+    // Get user info using the access token (v2 requires fields parameter)
+    const userFields = [
+      'user.open_id',
+      'user.username',
+      'user.display_name',
+      'user.avatar_url',
+      'user.follower_count',
+      'user.following_count',
+      'user.video_count'
+    ].join(',');
+    const userResponse = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(userFields)}`, {
       headers: {
         'Authorization': `Bearer ${tokenData.access_token}`,
         'Cache-Control': 'no-cache'
@@ -183,7 +192,13 @@ async function getTikTokAccount(req, res) {
     
     // Get updated user stats
     try {
-      const statsResponse = await fetch('https://open.tiktokapis.com/v2/user/info/', {
+      const statsFields = [
+        'user.follower_count',
+        'user.following_count',
+        'user.video_count',
+        'user.username'
+      ].join(',');
+      const statsResponse = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(statsFields)}`, {
         headers: {
           'Authorization': `Bearer ${account.accessToken}`,
           'Cache-Control': 'no-cache'
@@ -265,7 +280,8 @@ async function testTikTokConnection(req, res) {
     }
     
     // Test API connection
-    const testResponse = await fetch('https://open.tiktokapis.com/v2/user/info/', {
+    const testFields = [ 'user.username' ].join(',');
+    const testResponse = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(testFields)}`, {
       headers: {
         'Authorization': `Bearer ${account.accessToken}`,
         'Cache-Control': 'no-cache'
