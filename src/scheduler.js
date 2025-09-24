@@ -622,6 +622,15 @@ async function tryPublishToYouTube(post, account) {
     // Use Resumable upload with external video URL is not supported directly.
     // For simplicity, we pass the mediaUrl as file URL; in production, download then stream.
     // Here, we attempt using simple insert with media body via external fetch stream.
+    // Pre-fetch media and create a readable stream (not a Promise)
+    const fetchResp = await fetch(post.mediaUrl);
+    if (!fetchResp.ok) {
+      throw new Error(`Failed to fetch media: ${fetchResp.status}`);
+    }
+    const mediaBuffer = Buffer.from(await fetchResp.arrayBuffer());
+    const { Readable } = require('stream');
+    const mediaStream = Readable.from(mediaBuffer);
+
     const res = await youtube.videos.insert({
       part: ['snippet,status'],
       requestBody: {
@@ -639,18 +648,7 @@ async function tryPublishToYouTube(post, account) {
         }
       },
       media: {
-        body: (() => {
-          const { Readable } = require('stream');
-          return (async () => {
-            const response = await fetch(post.mediaUrl);
-            if (!response.ok) {
-              throw new Error(`Failed to fetch media: ${response.status}`);
-            }
-            const arrayBuf = await response.arrayBuffer();
-            const buffer = Buffer.from(arrayBuf);
-            return Readable.from(buffer);
-          })();
-        })()
+        body: mediaStream
       }
     });
 
