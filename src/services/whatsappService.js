@@ -200,7 +200,19 @@ class WhatsAppService {
 
       // Enhanced message handling with auto-response
       client.on('message', async (message) => {
-        if (message.fromMe) return;
+        // Allow self-testing: if the message is from the same account to itself, process it
+        if (message.fromMe) {
+          try {
+            const currentClient = this.userClients.get(userId);
+            const selfId = currentClient?.info?.wid?._serialized;
+            // Only process when user messages themselves; ignore other fromMe events
+            if (!selfId || message.to !== selfId) {
+              return;
+            }
+          } catch {
+            return;
+          }
+        }
         
         if (message.body === 'ping') {
           console.log(`[WA] Ping message received from ${message.from}, ignoring`);

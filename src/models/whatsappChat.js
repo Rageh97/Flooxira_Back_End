@@ -67,3 +67,4 @@ User.hasMany(WhatsappChat, { foreignKey: 'userId' });
 WhatsappChat.belongsTo(User, { foreignKey: 'userId' });
 
 module.exports = { WhatsappChat };
+
