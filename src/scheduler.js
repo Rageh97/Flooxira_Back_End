@@ -539,7 +539,8 @@ async function tryPublishToFacebook(post, account) {
 
 async function tryPublishToTikTok(post, account) {
   try {
-    const token = require('./utils/crypto').decrypt(account.accessToken);
+    // TikTokAccount model returns decrypted tokens via getters
+    const token = account.accessToken;
     console.log('Publishing to TikTok:', account.username);
     
     // TikTok API endpoint for video upload
