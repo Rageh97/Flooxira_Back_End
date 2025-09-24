@@ -30,7 +30,7 @@ const TikTokAccount = sequelize.define('TikTokAccount', {
     allowNull: true
   },
   profilePicture: {
-    type: DataTypes.STRING,
+    type: DataTypes.TEXT,
     allowNull: true
   },
   followerCount: {

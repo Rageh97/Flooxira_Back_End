@@ -91,7 +91,7 @@ async function exchangeCode(req, res) {
         tiktokUserId: user.open_id,
         username: user.username,
         displayName: user.display_name,
-        profilePicture: user.avatar_url,
+        profilePicture: String(user.avatar_url || '').slice(0, 2000),
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
         expiresAt: new Date(Date.now() + (tokenData.expires_in * 1000)),
@@ -104,7 +104,7 @@ async function exchangeCode(req, res) {
       account.tiktokUserId = user.open_id;
       account.username = user.username;
       account.displayName = user.display_name;
-      account.profilePicture = user.avatar_url;
+      account.profilePicture = String(user.avatar_url || '').slice(0, 2000);
       account.accessToken = tokenData.access_token;
       account.refreshToken = tokenData.refresh_token;
       account.expiresAt = new Date(Date.now() + (tokenData.expires_in * 1000));
