@@ -639,7 +639,18 @@ async function tryPublishToYouTube(post, account) {
         }
       },
       media: {
-        body: await (await fetch(post.mediaUrl)).body
+        body: (() => {
+          const { Readable } = require('stream');
+          return (async () => {
+            const response = await fetch(post.mediaUrl);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch media: ${response.status}`);
+            }
+            const arrayBuf = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuf);
+            return Readable.from(buffer);
+          })();
+        })()
       }
     });
 

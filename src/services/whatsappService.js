@@ -416,7 +416,7 @@ class WhatsAppService {
           responseSource = 'openai';
         } catch (openaiError) {
           console.error('OpenAI error:', openaiError);
-          response = "I'm sorry, I'm having trouble processing your request right now. Please try again later.";
+          response = "نحن الان في وضع التطوير سستتحسن التجربة قريبا...";
           responseSource = 'fallback';
         }
       }
