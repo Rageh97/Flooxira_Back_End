@@ -578,15 +578,17 @@ async function tryPublishToTikTok(post, account) {
       body: form
     });
 
+    // Handle response properly to avoid "Body is unusable" error
     let data;
+    const responseText = await response.text();
+    console.log('TikTok upload response:', { status: response.status, text: responseText?.slice(0, 500) });
+    
     try {
-      data = await response.json();
+      data = JSON.parse(responseText);
     } catch (e) {
-      const text = await response.text();
-      console.error('TikTok non-JSON response:', { status: response.status, text: text?.slice(0, 500) });
-      throw new Error(`TikTok upload unexpected response ${response.status}`);
+      console.error('TikTok non-JSON response:', { status: response.status, text: responseText?.slice(0, 500) });
+      throw new Error(`TikTok upload unexpected response ${response.status}: ${responseText?.slice(0, 200)}`);
     }
-    console.log('TikTok upload response:', { status: response.status, data });
 
     if (!response.ok || data.error) {
       throw new Error(data.error?.message || `TikTok upload failed: ${response.status}`);
