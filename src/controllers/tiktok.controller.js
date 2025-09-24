@@ -47,13 +47,13 @@ async function exchangeCode(req, res) {
     
     // Get user info using the access token (v2 requires fields parameter)
     const userFields = [
-      'user.open_id',
-      'user.username',
-      'user.display_name',
-      'user.avatar_url',
-      'user.follower_count',
-      'user.following_count',
-      'user.video_count'
+      'open_id',
+      'username',
+      'display_name',
+      'avatar_url',
+      'follower_count',
+      'following_count',
+      'video_count'
     ].join(',');
     const userResponse = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(userFields)}`, {
       headers: {
@@ -72,6 +72,15 @@ async function exchangeCode(req, res) {
       });
     }
     
+    const user = userData?.data?.user || {};
+    if (!user.open_id || !user.username) {
+      console.error('TikTok user info missing required fields:', userData);
+      return res.status(400).json({
+        message: 'TikTok user info is incomplete. Ensure required scopes are approved and fields are accessible.',
+        error: 'missing_user_fields'
+      });
+    }
+    
     console.log('TikTok user info received:', userData);
     
     // Store or update TikTok account
@@ -79,10 +88,10 @@ async function exchangeCode(req, res) {
       where: { userId: req.userId },
       defaults: {
         userId: req.userId,
-        tiktokUserId: userData.data.user.open_id,
-        username: userData.data.user.username,
-        displayName: userData.data.user.display_name,
-        profilePicture: userData.data.user.avatar_url,
+        tiktokUserId: user.open_id,
+        username: user.username,
+        displayName: user.display_name,
+        profilePicture: user.avatar_url,
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
         expiresAt: new Date(Date.now() + (tokenData.expires_in * 1000)),
@@ -92,10 +101,10 @@ async function exchangeCode(req, res) {
     
     if (!created) {
       // Update existing account
-      account.tiktokUserId = userData.data.user.open_id;
-      account.username = userData.data.user.username;
-      account.displayName = userData.data.user.display_name;
-      account.profilePicture = userData.data.user.avatar_url;
+      account.tiktokUserId = user.open_id;
+      account.username = user.username;
+      account.displayName = user.display_name;
+      account.profilePicture = user.avatar_url;
       account.accessToken = tokenData.access_token;
       account.refreshToken = tokenData.refresh_token;
       account.expiresAt = new Date(Date.now() + (tokenData.expires_in * 1000));
@@ -193,10 +202,10 @@ async function getTikTokAccount(req, res) {
     // Get updated user stats
     try {
       const statsFields = [
-        'user.follower_count',
-        'user.following_count',
-        'user.video_count',
-        'user.username'
+        'follower_count',
+        'following_count',
+        'video_count',
+        'username'
       ].join(',');
       const statsResponse = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(statsFields)}`, {
         headers: {
@@ -280,7 +289,7 @@ async function testTikTokConnection(req, res) {
     }
     
     // Test API connection
-    const testFields = [ 'user.username' ].join(',');
+    const testFields = [ 'username' ].join(',');
     const testResponse = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(testFields)}`, {
       headers: {
         'Authorization': `Bearer ${account.accessToken}`,
