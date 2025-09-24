@@ -215,6 +215,27 @@ const port = process.env.PORT || 4000;
 
 async function start() {
   await sequelize.authenticate();
+  // Ensure critical schema migrations without destructive force
+  try {
+    const isMySQL = (process.env.DB_DIALECT || '').toLowerCase() === 'mysql';
+    if (isMySQL) {
+      // Upgrade tiktok_accounts.profilePicture to TEXT if still VARCHAR(255)
+      const qi = sequelize.getQueryInterface();
+      const table = 'tiktok_accounts';
+      let desc;
+      try {
+        desc = await qi.describeTable(table);
+      } catch {}
+      const col = desc && desc.profilePicture;
+      const typeStr = String(col && col.type || '').toLowerCase();
+      if (col && /varchar\(\d+\)/.test(typeStr)) {
+        console.log('Altering column tiktok_accounts.profilePicture to TEXT');
+        await sequelize.query('ALTER TABLE `tiktok_accounts` MODIFY `profilePicture` TEXT NULL');
+      }
+    }
+  } catch (migErr) {
+    console.warn('Non-fatal schema migration step failed:', migErr?.message || migErr);
+  }
   try {
     // Configure sync behavior via env to avoid destructive drops in production
     const dbSyncMode = (process.env.DB_SYNC || '').toLowerCase();
