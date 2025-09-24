@@ -9,10 +9,11 @@ const TIKTOK_REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI || 'http://localhost
 // TikTok OAuth scopes
 const TIKTOK_SCOPES = [
   'user.info.basic',
+  'user.info.profile',
   'user.info.stats',
   'video.list',
   'video.upload'
-].join(' ');
+].join(',');
 
 // Generate random state for CSRF protection
 function generateState() {
