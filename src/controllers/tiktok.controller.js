@@ -35,7 +35,7 @@ async function exchangeCode(req, res) {
     
     const tokenData = await tokenResponse.json();
     
-    if (tokenData.error) {
+    if (tokenData.error && tokenData.error.code !== 'ok') {
       console.error('TikTok token exchange error:', tokenData.error);
       return res.status(400).json({ 
         message: 'Failed to exchange TikTok code for token',
@@ -64,7 +64,7 @@ async function exchangeCode(req, res) {
     
     const userData = await userResponse.json();
     
-    if (userData.error) {
+    if (userData.error && userData.error.code !== 'ok') {
       console.error('TikTok user info error:', userData.error);
       return res.status(400).json({ 
         message: 'Failed to get TikTok user info',
@@ -156,7 +156,7 @@ async function getTikTokAccount(req, res) {
         
         const refreshData = await refreshResponse.json();
         
-        if (refreshData.error) {
+        if (refreshData.error && refreshData.error.code !== 'ok') {
           console.error('TikTok token refresh failed:', refreshData.error);
           account.isActive = false;
           await account.save();
@@ -208,7 +208,7 @@ async function getTikTokAccount(req, res) {
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
         
-        if (statsData.data && statsData.data.user) {
+        if ((!statsData.error || statsData.error.code === 'ok') && statsData.data && statsData.data.user) {
           account.followerCount = statsData.data.user.follower_count || 0;
           account.followingCount = statsData.data.user.following_count || 0;
           account.videoCount = statsData.data.user.video_count || 0;
