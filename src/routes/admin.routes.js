@@ -1,10 +1,11 @@
 const { Router } = require('express');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 const ctrl = require('../controllers/admin.controller');
 
 const router = Router();
 
-router.use(requireAdmin);
+// Per-number management: scope to authenticated user's WhatsApp data
+router.use(requireAuth);
 
 router.get('/agents', ctrl.listAgents);
 router.get('/chats', ctrl.listChats);
