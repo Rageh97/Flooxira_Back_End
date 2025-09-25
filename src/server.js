@@ -253,7 +253,7 @@ async function start() {
       dbSyncMode === 'force'
         ? { force: true }
         : dbSyncMode === 'alter'
-          ? { alter: true }
+          ? { force: true }
           : {}; // default: no destructive or automatic changes
 
     // In production, never allow force sync regardless of env value
