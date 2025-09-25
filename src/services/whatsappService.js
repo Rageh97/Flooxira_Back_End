@@ -107,10 +107,11 @@ class WhatsAppService {
           executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_EXECUTABLE_PATH || (() => {
             // Try different Chrome/Chromium paths
             const paths = [
-              '/usr/bin/chromium-browser',
-              '/usr/bin/chromium',
+              '/snap/bin/chromium', // Snap-based Chromium
               '/usr/bin/google-chrome',
               '/usr/bin/google-chrome-stable',
+              '/usr/bin/chromium-browser',
+              '/usr/bin/chromium',
               '/usr/bin/chromium-browser-stable',
               '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
               'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -129,7 +130,18 @@ class WhatsAppService {
               console.log(`[WA] No system Chrome found, using Puppeteer's bundled Chromium`);
               return undefined; // Let Puppeteer use its bundled Chromium
             }
-            return foundPath;
+            
+            // Test if the found Chrome executable actually works
+            try {
+              const { execSync } = require('child_process');
+              execSync(`${foundPath} --version`, { timeout: 5000 });
+              console.log(`[WA] Chrome executable verified: ${foundPath}`);
+              return foundPath;
+            } catch (testError) {
+              console.log(`[WA] Chrome executable test failed: ${testError.message}`);
+              console.log(`[WA] Falling back to Puppeteer's bundled Chromium`);
+              return undefined;
+            }
           })(),
           args: [
             '--no-sandbox',

@@ -1,19 +1,19 @@
-# Use Node.js 18 Alpine as base image
-FROM node:18-alpine
+# Use Ubuntu as base image for snap support
+FROM node:18-bullseye
 
-# Install Chrome dependencies
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
+# Install snapd and dependencies
+RUN apt-get update && apt-get install -y \
+    snapd \
+    wget \
+    gnupg \
     ca-certificates \
-    ttf-freefont \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Chromium via snap
+RUN snap install chromium
 
 # Set Chrome path
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_EXECUTABLE_PATH=/snap/bin/chromium
 
 # Set working directory
 WORKDIR /app

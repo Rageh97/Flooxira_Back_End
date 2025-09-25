@@ -30,8 +30,14 @@ apt-get install -y \
     libxtst6 \
     xdg-utils
 
+# Try to install Chromium via snap first (recommended for containers)
+if ! command -v chromium &> /dev/null; then
+    echo "Installing Chromium via snap..."
+    snap install chromium
+fi
+
 # Try to install Google Chrome
-if ! command -v google-chrome &> /dev/null; then
+if ! command -v google-chrome &> /dev/null && ! command -v chromium &> /dev/null; then
     echo "Installing Google Chrome..."
     wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -
     echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
@@ -40,13 +46,16 @@ if ! command -v google-chrome &> /dev/null; then
 fi
 
 # Fallback to Chromium if Chrome installation fails
-if ! command -v google-chrome &> /dev/null; then
+if ! command -v google-chrome &> /dev/null && ! command -v chromium &> /dev/null; then
     echo "Installing Chromium as fallback..."
     apt-get install -y chromium-browser
 fi
 
 # Verify installation
-if command -v google-chrome &> /dev/null; then
+if command -v chromium &> /dev/null; then
+    echo "Snap Chromium installed successfully"
+    chromium --version
+elif command -v google-chrome &> /dev/null; then
     echo "Google Chrome installed successfully"
     google-chrome --version
 elif command -v chromium-browser &> /dev/null; then
