@@ -111,11 +111,24 @@ class WhatsAppService {
               '/usr/bin/chromium',
               '/usr/bin/google-chrome',
               '/usr/bin/google-chrome-stable',
+              '/usr/bin/chromium-browser-stable',
               '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
               'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
               'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
             ];
-            return paths.find(p => fs.existsSync(p)) || undefined;
+            const foundPath = paths.find(p => {
+              try {
+                return fs.existsSync(p);
+              } catch (e) {
+                return false;
+              }
+            });
+            console.log(`[WA] Chrome executable found: ${foundPath || 'none'}`);
+            // If no Chrome found, let Puppeteer use its bundled Chromium
+            if (!foundPath) {
+              console.log(`[WA] No system Chrome found, using Puppeteer's bundled Chromium`);
+            }
+            return foundPath;
           })(),
           args: [
             '--no-sandbox',
@@ -257,8 +270,15 @@ class WhatsAppService {
         }
       });
 
-      // Initialize the client
-      await client.initialize();
+      // Initialize the client with error handling
+      try {
+        await client.initialize();
+        console.log(`[WA] Client initialized successfully for user ${userId}`);
+      } catch (initError) {
+        console.error(`[WA] Client initialization failed for user ${userId}:`, initError);
+        this.userStates.set(userId, { initializing: false, reconnecting: false });
+        throw new Error(`Failed to initialize WhatsApp client: ${initError.message}`);
+      }
 
       // Wait for QR code generation
       await new Promise(resolve => setTimeout(resolve, 2000));

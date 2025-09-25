@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "nodemon --ext js,json --watch src src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "postinstall": "npx puppeteer browsers install chrome || echo 'Chrome installation failed, will use system Chrome'"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -20,6 +21,7 @@
     "mysql2": "^3.11.3",
     "node-cron": "^3.0.3",
     "openai": "^5.20.0",
+    "puppeteer": "^21.0.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "qrcode": "^1.5.4",
