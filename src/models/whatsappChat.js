@@ -40,6 +40,10 @@ const WhatsappChat = sequelize.define('WhatsappChat', {
     type: DataTypes.STRING(255),
     allowNull: true
   },
+  assigneeId: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   isProcessed: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
