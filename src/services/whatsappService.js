@@ -104,6 +104,19 @@ class WhatsAppService {
         }),
         puppeteer: {
           headless: true,
+          executablePath: process.env.CHROME_EXECUTABLE_PATH || (() => {
+            // Try different Chrome/Chromium paths
+            const paths = [
+              '/usr/bin/chromium-browser',
+              '/usr/bin/chromium',
+              '/usr/bin/google-chrome',
+              '/usr/bin/google-chrome-stable',
+              '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+              'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+              'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+            ];
+            return paths.find(p => fs.existsSync(p)) || undefined;
+          })(),
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
