@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "nodemon --ext js,json --watch src src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "migrate": "node migrate-add-assignee.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

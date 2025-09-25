@@ -32,19 +32,45 @@ async function listChats(req, res) {
     const where = { userId: req.user.id }; // Only show chats for the current user's WhatsApp
     if (contactNumber) where.contactNumber = contactNumber;
     if (assigneeId) where.assigneeId = assigneeId;
+    
+    // Try to include assignee, but handle case where column doesn't exist
+    let includeOptions = [];
+    try {
+      includeOptions = [
+        { model: User, as: 'Assignee', attributes: ['id', 'name', 'email'], required: false }
+      ];
+    } catch (includeError) {
+      console.log('Assignee column not available, skipping include');
+    }
+    
     const chats = await WhatsappChat.findAll({ 
       where, 
       order: [['timestamp', 'DESC']], 
       limit: parseInt(limit), 
       offset: parseInt(offset),
-      include: [
-        { model: User, as: 'Assignee', attributes: ['id', 'name', 'email'] }
-      ]
+      include: includeOptions
     });
     res.json({ success: true, chats });
   } catch (e) {
     console.error('Error listing chats:', e);
-    res.status(500).json({ success: false, message: 'Failed to list chats' });
+    
+    // If it's a column error, try without the include
+    if (e.message && e.message.includes('assigneeId')) {
+      try {
+        console.log('Retrying without assignee include...');
+        const chats = await WhatsappChat.findAll({ 
+          where: { userId: req.user.id }, 
+          order: [['timestamp', 'DESC']], 
+          limit: parseInt(req.query.limit || 50), 
+          offset: parseInt(req.query.offset || 0)
+        });
+        return res.json({ success: true, chats });
+      } catch (retryError) {
+        console.error('Retry also failed:', retryError);
+      }
+    }
+    
+    res.status(500).json({ success: false, message: 'Failed to list chats', error: e.message });
   }
 }
 
@@ -59,9 +85,20 @@ async function assignChat(req, res) {
     });
     if (!chat) return res.status(404).json({ success: false, message: 'Chat not found' });
     
-    chat.assigneeId = assigneeId || null;
-    await chat.save();
-    res.json({ success: true });
+    // Check if assigneeId column exists
+    try {
+      chat.assigneeId = assigneeId || null;
+      await chat.save();
+      res.json({ success: true });
+    } catch (columnError) {
+      if (columnError.message && columnError.message.includes('assigneeId')) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Assignee feature not available. Please run database migration first.' 
+        });
+      }
+      throw columnError;
+    }
   } catch (e) {
     console.error('Error assigning chat:', e);
     res.status(500).json({ success: false, message: 'Failed to assign chat' });
