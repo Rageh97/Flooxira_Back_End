@@ -240,7 +240,7 @@ async function start() {
   }
   try {
     // Configure sync behavior via env to avoid destructive drops in production
-    const dbSyncMode = (process.env.DB_SYNC || '').toLowerCase();
+    const dbSyncMode = (process.env.DB_SYNC || process.env.DB_SYNC_MODE || '').toLowerCase();
     const isProduction = process.env.NODE_ENV === 'production';
 
     /**
@@ -261,7 +261,18 @@ async function start() {
       delete syncOptions.force;
     }
 
+    // Log what we're doing
+    if (syncOptions.force) {
+      console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables...');
+    } else {
+      console.log('📝 Normal sync: No destructive changes');
+    }
+
     await sequelize.sync(syncOptions);
+    
+    if (syncOptions.force) {
+      console.log('✅ FORCE SYNC COMPLETED: All tables dropped and recreated!');
+    }
   } catch (err) {
     console.error('Sequelize sync failed:', err?.stack || err);
     if (process.env.NODE_ENV === 'development' && process.env.SQLITE_RESET === '1') {

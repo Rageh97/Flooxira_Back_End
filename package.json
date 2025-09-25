@@ -8,7 +8,8 @@
     "migrate": "node migrate-add-assignee.js",
     "force-recreate-db": "node force-recreate-db.js",
     "force-start": "DB_SYNC_MODE=force npm start",
-    "force-start-win": "set DB_SYNC_MODE=force && npm start"
+    "force-start-win": "set DB_SYNC_MODE=force && npm start",
+    "test-force": "node test-force-sync.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
