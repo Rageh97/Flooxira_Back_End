@@ -104,7 +104,7 @@ class WhatsAppService {
         }),
         puppeteer: {
           headless: true,
-          executablePath: process.env.CHROME_EXECUTABLE_PATH || (() => {
+          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_EXECUTABLE_PATH || (() => {
             // Try different Chrome/Chromium paths
             const paths = [
               '/usr/bin/chromium-browser',
@@ -127,6 +127,7 @@ class WhatsAppService {
             // If no Chrome found, let Puppeteer use its bundled Chromium
             if (!foundPath) {
               console.log(`[WA] No system Chrome found, using Puppeteer's bundled Chromium`);
+              return undefined; // Let Puppeteer use its bundled Chromium
             }
             return foundPath;
           })(),
