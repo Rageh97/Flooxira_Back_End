@@ -70,6 +70,10 @@ const WhatsappChat = sequelize.define('WhatsappChat', {
 User.hasMany(WhatsappChat, { foreignKey: 'userId' });
 WhatsappChat.belongsTo(User, { foreignKey: 'userId' });
 
+// Assignee association
+User.hasMany(WhatsappChat, { as: 'AssignedChats', foreignKey: 'assigneeId' });
+WhatsappChat.belongsTo(User, { as: 'Assignee', foreignKey: 'assigneeId' });
+
 module.exports = { WhatsappChat };
 
 
