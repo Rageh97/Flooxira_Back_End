@@ -42,7 +42,11 @@ const WhatsappChat = sequelize.define('WhatsappChat', {
   },
   assigneeId: {
     type: DataTypes.INTEGER,
-    allowNull: true
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    }
   },
   isProcessed: {
     type: DataTypes.BOOLEAN,
@@ -63,6 +67,9 @@ const WhatsappChat = sequelize.define('WhatsappChat', {
     },
     {
       fields: ['timestamp']
+    },
+    {
+      fields: ['assigneeId']
     }
   ]
 });

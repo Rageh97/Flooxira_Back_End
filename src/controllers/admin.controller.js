@@ -91,10 +91,10 @@ async function assignChat(req, res) {
       await chat.save();
       res.json({ success: true });
     } catch (columnError) {
-      if (columnError.message && columnError.message.includes('assigneeId')) {
+      if (columnError.message && (columnError.message.includes('assigneeId') || columnError.message.includes('Unknown column'))) {
         return res.status(400).json({ 
           success: false, 
-          message: 'Assignee feature not available. Please run database migration first.' 
+          message: 'Assignee feature not available. The database needs to be recreated with the latest schema. Please redeploy your backend.' 
         });
       }
       throw columnError;
