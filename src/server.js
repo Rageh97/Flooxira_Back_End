@@ -239,34 +239,9 @@ async function start() {
     console.warn('Non-fatal schema migration step failed:', migErr?.message || migErr);
   }
   try {
-    // Configure sync behavior via env to avoid destructive drops in production
-    const dbSyncMode = (process.env.DB_SYNC || process.env.DB_SYNC_MODE || '').toLowerCase();
-    const isProduction = process.env.NODE_ENV === 'production';
-
-    /**
-     * dbSyncMode options:
-     * - 'force': drop and recreate tables (DEV ONLY)
-     * - 'alter': safe in-place schema sync (preferred for DEV/STAGING)
-     * - anything else / empty: do not alter schema (PRODUCTION default)
-     */
-    const syncOptions =
-      dbSyncMode === 'force'
-        ? { force: true }
-        : dbSyncMode === 'alter'
-          ? { force: true }
-          : {}; // default: no destructive or automatic changes
-
-    // In production, never allow force sync regardless of env value
-    if (isProduction && 'force' in syncOptions) {
-      delete syncOptions.force;
-    }
-
-    // Log what we're doing
-    if (syncOptions.force) {
-      console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables...');
-    } else {
-      console.log('📝 Normal sync: No destructive changes');
-    }
+    // ALWAYS force recreate database on every deployment
+    console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables on every deployment...');
+    const syncOptions = { force: true };
 
     await sequelize.sync(syncOptions);
     
