@@ -3,16 +3,26 @@ const { WhatsappChat } = require('../models/whatsappChat');
 
 async function listAgents(req, res) {
   try {
+    console.log('listAgents called, req.user:', req.user);
+    
+    // Check if req.user exists
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+    
     // For WhatsApp management, we'll return the current user as the only "agent"
     // since this is for managing their own WhatsApp number's chats
     const agents = [{
       id: req.user.id,
-      name: req.user.name,
-      email: req.user.email
+      name: req.user.name || 'Unknown',
+      email: req.user.email || 'unknown@example.com'
     }];
+    
+    console.log('Returning agents:', agents);
     res.json({ success: true, agents });
   } catch (e) {
-    res.status(500).json({ success: false, message: 'Failed to list agents' });
+    console.error('Error listing agents:', e);
+    res.status(500).json({ success: false, message: 'Failed to list agents', error: e.message });
   }
 }
 
