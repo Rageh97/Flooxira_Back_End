@@ -138,6 +138,7 @@ const TIKTOK_SCOPES = [
   'video.upload'
 ].join(',');
 
+
 // Generate random state for CSRF protection
 function generateState() {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
