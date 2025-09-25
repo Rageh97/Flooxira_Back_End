@@ -68,3 +68,6 @@ WhatsappChat.belongsTo(User, { foreignKey: 'userId' });
 
 module.exports = { WhatsappChat };
 
+
+
+

@@ -9,6 +9,7 @@ const Fuse = require('fuse.js');
 const OpenAI = require('openai');
 const path = require('path');
 const fs = require('fs');
+const xlsx = require('xlsx');
 
 // OpenAI client
 const openai = new OpenAI({
@@ -213,6 +214,21 @@ class WhatsAppService {
             return;
           }
         }
+
+        // If message is in a group, only respond when the bot is mentioned
+        try {
+          if (String(message.from).endsWith('@g.us')) {
+            const currentClient = this.userClients.get(userId);
+            const selfId = currentClient?.info?.wid?._serialized;
+            if (selfId) {
+              const mentions = await message.getMentions().catch(() => []);
+              const mentioned = Array.isArray(mentions) && mentions.some(m => m?.id?._serialized === selfId);
+              if (!mentioned) {
+                return; // skip non-mention group messages
+              }
+            }
+          }
+        } catch {}
         
         if (message.body === 'ping') {
           console.log(`[WA] Ping message received from ${message.from}, ignoring`);
@@ -431,8 +447,10 @@ class WhatsAppService {
         responseSource = 'fallback';
       }
 
-      // Send response and log it
+      // Send response (with 3s delay) and log it
       if (response) {
+        // Delay 3 seconds before replying
+        await new Promise(r => setTimeout(r, 3000));
         await this.sendMessage(userId, message.from, response);
         await this.logChatMessage(userId, message.from, 'outgoing', response, responseSource, knowledgeBaseMatch);
       }
@@ -680,6 +698,90 @@ class WhatsAppService {
     } catch (error) {
       console.error('Get bot stats error:', error);
       return { success: false, message: 'Failed to get bot stats', error: error.message };
+    }
+  }
+
+  // ===== Groups and Status Utilities =====
+  async listGroups(userId) {
+    try {
+      const client = this.userClients.get(userId);
+      if (!client) return { success: false, message: 'Client not connected' };
+      const chats = await client.getChats();
+      const groups = chats.filter(c => c.isGroup);
+      return {
+        success: true,
+        groups: groups.map(g => ({ id: g.id?._serialized, name: g.name, participantsCount: g.participants?.length || 0 }))
+      };
+    } catch (e) {
+      return { success: false, message: 'Failed to list groups', error: e.message };
+    }
+  }
+
+  async sendToGroupByName(userId, groupName, message) {
+    try {
+      const client = this.userClients.get(userId);
+      if (!client) return { success: false, message: 'Client not connected' };
+      const chats = await client.getChats();
+      const group = chats.find(c => c.isGroup && String(c.name).trim().toLowerCase() === String(groupName).trim().toLowerCase());
+      if (!group) return { success: false, message: 'Group not found' };
+      await client.sendMessage(group.id._serialized, message);
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: 'Failed to send to group', error: e.message };
+    }
+  }
+
+  async exportGroupMembers(userId, groupName) {
+    try {
+      const client = this.userClients.get(userId);
+      if (!client) return { success: false, message: 'Client not connected' };
+      const chats = await client.getChats();
+      const group = chats.find(c => c.isGroup && String(c.name).trim().toLowerCase() === String(groupName).trim().toLowerCase());
+      if (!group) return { success: false, message: 'Group not found' };
+      await group.fetchParticipants?.();
+      const rows = (group.participants || []).map(p => ({ phone: p.id?.user || '', wid: p.id?._serialized || '' }));
+      const wb = xlsx.utils.book_new();
+      const ws = xlsx.utils.json_to_sheet(rows);
+      xlsx.utils.book_append_sheet(wb, ws, 'members');
+      const dir = 'uploads/exports';
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, `group_${Date.now()}.xlsx`);
+      xlsx.writeFile(wb, filePath);
+      return { success: true, file: `/${filePath.replace(/\\/g, '/')}` };
+    } catch (e) {
+      return { success: false, message: 'Failed to export group members', error: e.message };
+    }
+  }
+
+  async postStatus(userId, mediaBuffer, filename, caption) {
+    try {
+      const client = this.userClients.get(userId);
+      if (!client) return { success: false, message: 'Client not connected' };
+      const media = new MessageMedia('image/png', mediaBuffer.toString('base64'), filename || 'status.png');
+      await client.sendMessage('status@broadcast', media, { caption: caption || '' });
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: 'Failed to post status', error: e.message };
+    }
+  }
+
+  // ===== Campaign (bulk sending) =====
+  async startCampaign(userId, rows, messageTemplate, throttleMs = 3000) {
+    try {
+      const client = this.userClients.get(userId);
+      if (!client) return { success: false, message: 'Client not connected' };
+      let sent = 0, failed = 0;
+      for (const row of rows) {
+        const raw = String(row.phone || row.number || '').replace(/\D/g, '');
+        if (!raw) { failed++; continue; }
+        const personalized = String(row.message || messageTemplate || '').replace(/\{\{name\}\}/gi, row.name || '');
+        const ok = await this.sendMessage(userId, raw, personalized || '');
+        if (ok) sent++; else failed++;
+        await new Promise(r => setTimeout(r, throttleMs));
+      }
+      return { success: true, summary: { sent, failed, total: rows.length } };
+    } catch (e) {
+      return { success: false, message: 'Campaign failed', error: e.message };
     }
   }
 }

@@ -318,6 +318,73 @@ async function sendWhatsAppMessage(req, res) {
   }
 }
 
+async function listGroups(req, res) {
+  try {
+    const userId = req.userId;
+    const result = await whatsappService.listGroups(userId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to list groups', error: error.message });
+  }
+}
+
+async function sendToGroup(req, res) {
+  try {
+    const userId = req.userId;
+    const { groupName, message } = req.body;
+    if (!groupName || !message) return res.status(400).json({ success: false, message: 'groupName and message required' });
+    const result = await whatsappService.sendToGroupByName(userId, groupName, message);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to send to group', error: error.message });
+  }
+}
+
+async function exportGroupMembers(req, res) {
+  try {
+    const userId = req.userId;
+    const { groupName } = req.query;
+    if (!groupName) return res.status(400).json({ success: false, message: 'groupName required' });
+    const result = await whatsappService.exportGroupMembers(userId, String(groupName));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to export group members', error: error.message });
+  }
+}
+
+async function postStatus(req, res) {
+  try {
+    const userId = req.userId;
+    const file = req.file;
+    const { caption } = req.body || {};
+    if (!file) return res.status(400).json({ success: false, message: 'image required' });
+    const buffer = fs.readFileSync(file.path);
+    const result = await whatsappService.postStatus(userId, buffer, file.originalname, caption);
+    // cleanup
+    try { fs.unlinkSync(file.path); } catch {}
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to post status', error: error.message });
+  }
+}
+
+async function startCampaign(req, res) {
+  try {
+    const userId = req.userId;
+    const file = req.file;
+    const { messageTemplate, throttleMs } = req.body || {};
+    if (!file) return res.status(400).json({ success: false, message: 'Excel file required' });
+    const wb = xlsx.readFile(file.path);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = xlsx.utils.sheet_to_json(ws);
+    const result = await whatsappService.startCampaign(userId, rows, messageTemplate || '', parseInt(throttleMs || '3000'));
+    try { fs.unlinkSync(file.path); } catch {}
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to start campaign', error: error.message });
+  }
+}
+
 async function getChatHistory(req, res) {
   try {
     const userId = req.userId;
@@ -371,6 +438,12 @@ module.exports = {
   getQRCode,
   stopWhatsAppSession,
   sendWhatsAppMessage,
+  // groups/status/campaigns
+  listGroups,
+  sendToGroup,
+  exportGroupMembers,
+  postStatus,
+  startCampaign,
   getChatHistory,
   getChatContacts,
   getBotStats,

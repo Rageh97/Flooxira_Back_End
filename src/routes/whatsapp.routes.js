@@ -1,6 +1,8 @@
 const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
 const whatsappCtrl = require('../controllers/whatsapp.controller');
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/tmp' });
 
 const router = Router();
 
@@ -17,6 +19,15 @@ router.post('/send', whatsappCtrl.sendWhatsAppMessage);
 router.get('/chats', whatsappCtrl.getChatHistory);
 router.get('/contacts', whatsappCtrl.getChatContacts);
 router.get('/stats', whatsappCtrl.getBotStats);
+
+// Groups & Status
+router.get('/groups', whatsappCtrl.listGroups);
+router.post('/groups/send', whatsappCtrl.sendToGroup);
+router.get('/groups/export', whatsappCtrl.exportGroupMembers);
+router.post('/status/post', upload.single('image'), whatsappCtrl.postStatus);
+
+// Campaigns
+router.post('/campaigns/start', upload.single('file'), whatsappCtrl.startCampaign);
 
 // Knowledge base for WhatsApp Web
 router.post('/knowledge/upload', whatsappCtrl.upload.single('file'), whatsappCtrl.uploadKnowledgeBase);
