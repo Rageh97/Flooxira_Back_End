@@ -777,6 +777,52 @@ class WhatsAppService {
     }
   }
 
+  async sendToMultipleGroups(userId, groupNames, message, media, scheduleAt) {
+    try {
+      const client = this.userClients.get(userId);
+      if (!client) return { success: false, message: 'Client not connected' };
+
+      const chats = await client.getChats();
+      const selected = chats.filter(c => c.isGroup && groupNames.map(g => String(g).trim().toLowerCase()).includes(String(c.name).trim().toLowerCase()));
+      if (selected.length === 0) return { success: false, message: 'No matching groups found' };
+
+      const sendToChat = async (chat) => {
+        if (media && media.buffer) {
+          const base64 = media.buffer.toString('base64');
+          const msgMedia = new MessageMedia(media.mimetype || 'application/octet-stream', base64, media.filename || 'file');
+          await client.sendMessage(chat.id._serialized, msgMedia, { caption: message || '' });
+        } else {
+          await client.sendMessage(chat.id._serialized, message);
+        }
+      };
+
+      const now = Date.now();
+      let scheduledFor = null;
+      if (scheduleAt) {
+        const t = new Date(scheduleAt).getTime();
+        if (!isNaN(t) && t > now) scheduledFor = t;
+      }
+
+      if (scheduledFor) {
+        setTimeout(async () => {
+          for (const chat of selected) {
+            try { await sendToChat(chat); } catch (e) { console.error('[WA] group send error:', e?.message || e); }
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }, scheduledFor - now);
+        return { success: true, message: `Scheduled to ${selected.length} group(s) at ${new Date(scheduledFor).toISOString()}` };
+      } else {
+        for (const chat of selected) {
+          await sendToChat(chat);
+          await new Promise(r => setTimeout(r, 500));
+        }
+        return { success: true, message: `Sent to ${selected.length} group(s)` };
+      }
+    } catch (e) {
+      return { success: false, message: 'Failed to send to groups', error: e.message };
+    }
+  }
+
   async exportGroupMembers(userId, groupName) {
     try {
       const client = this.userClients.get(userId);

@@ -340,6 +340,32 @@ async function sendToGroup(req, res) {
   }
 }
 
+async function sendToGroupsBulk(req, res) {
+  try {
+    const userId = req.userId;
+    const file = req.file;
+    const { groupNames, message, scheduleAt } = req.body || {};
+    if (!groupNames || !Array.isArray(groupNames) || groupNames.length === 0) {
+      return res.status(400).json({ success: false, message: 'groupNames (array) required' });
+    }
+    if (!message && !file) {
+      return res.status(400).json({ success: false, message: 'message or media required' });
+    }
+
+    let media = null;
+    if (file) {
+      const buffer = fs.readFileSync(file.path);
+      media = { buffer, filename: file.originalname, mimetype: file.mimetype };
+    }
+
+    const result = await whatsappService.sendToMultipleGroups(userId, groupNames, message || '', media, scheduleAt);
+    try { if (file) fs.unlinkSync(file.path); } catch {}
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to send to groups', error: error.message });
+  }
+}
+
 async function exportGroupMembers(req, res) {
   try {
     const userId = req.userId;
@@ -444,6 +470,7 @@ module.exports = {
   exportGroupMembers,
   postStatus,
   startCampaign,
+  sendToGroupsBulk,
   getChatHistory,
   getChatContacts,
   getBotStats,

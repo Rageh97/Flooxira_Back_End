@@ -23,6 +23,8 @@ router.get('/stats', whatsappCtrl.getBotStats);
 // Groups & Status
 router.get('/groups', whatsappCtrl.listGroups);
 router.post('/groups/send', whatsappCtrl.sendToGroup);
+// Bulk group send with media + scheduling
+router.post('/groups/send-bulk', upload.single('media'), whatsappCtrl.sendToGroupsBulk);
 router.get('/groups/export', whatsappCtrl.exportGroupMembers);
 router.post('/status/post', upload.single('image'), whatsappCtrl.postStatus);
 
