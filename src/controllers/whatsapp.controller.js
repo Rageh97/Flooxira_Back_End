@@ -372,14 +372,22 @@ async function sendToGroupsBulk(req, res) {
 
     // If scheduleAt future => persist schedule
     const now = Date.now();
-    const t = scheduleAt ? new Date(scheduleAt).getTime() : 0;
+    let scheduledDate = null;
+    if (scheduleAt) {
+      // Parse the datetime-local string as local time
+      const [datePart, timePart] = scheduleAt.split('T');
+      const [year, month, day] = datePart.split('-').map(Number);
+      const [hours, minutes] = timePart.split(':').map(Number);
+      scheduledDate = new Date(year, month - 1, day, hours, minutes);
+    }
+    const t = scheduledDate ? scheduledDate.getTime() : 0;
     if (t && t > now) {
       const record = await WhatsappSchedule.create({
         userId,
         type: 'groups',
         payload: { groupNames, message },
         mediaPath: media ? await saveTempMedia(media.buffer, media.filename) : null,
-        scheduledAt: new Date(t),
+        scheduledAt: scheduledDate,
         status: 'pending'
       });
       try { if (file) fs.unlinkSync(file.path); } catch {}
@@ -590,7 +598,15 @@ async function startCampaign(req, res) {
     const rows = xlsx.utils.sheet_to_json(ws);
 
     const now = Date.now();
-    const t = scheduleAt ? new Date(scheduleAt).getTime() : 0;
+    let scheduledDate = null;
+    if (scheduleAt) {
+      // Parse the datetime-local string as local time
+      const [datePart, timePart] = scheduleAt.split('T');
+      const [year, month, day] = datePart.split('-').map(Number);
+      const [hours, minutes] = timePart.split(':').map(Number);
+      scheduledDate = new Date(year, month - 1, day, hours, minutes);
+    }
+    const t = scheduledDate ? scheduledDate.getTime() : 0;
     const cap = dailyCap ? parseInt(String(dailyCap)) : 0;
     const perDelay = perNumberDelayMs ? parseInt(String(perNumberDelayMs)) : parseInt(throttleMs || '3000');
     if (t && t > now) {
@@ -601,7 +617,7 @@ async function startCampaign(req, res) {
         let dayOffset = 0;
         while (idx < rows.length) {
           const slice = rows.slice(idx, idx + cap);
-          const date = new Date(t);
+          const date = new Date(scheduledDate);
           date.setDate(date.getDate() + dayOffset);
           await WhatsappSchedule.create({
             userId,
@@ -620,7 +636,7 @@ async function startCampaign(req, res) {
           type: 'campaign',
           payload: { rows, messageTemplate, throttleMs: perDelay },
           mediaPath,
-          scheduledAt: new Date(t),
+          scheduledAt: scheduledDate,
           status: 'pending'
         });
       }
