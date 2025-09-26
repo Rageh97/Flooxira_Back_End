@@ -25,11 +25,18 @@ router.get('/groups', whatsappCtrl.listGroups);
 router.post('/groups/send', whatsappCtrl.sendToGroup);
 // Bulk group send with media + scheduling
 router.post('/groups/send-bulk', upload.single('media'), whatsappCtrl.sendToGroupsBulk);
+router.get('/schedules', whatsappCtrl.listSchedules);
+router.post('/schedules/:id/cancel', whatsappCtrl.cancelSchedule);
+router.put('/schedules/:id', whatsappCtrl.updateSchedule);
+router.delete('/schedules/:id', whatsappCtrl.deleteSchedule);
+router.get('/schedules/monthly', whatsappCtrl.listMonthlySchedules);
+router.put('/schedules/post/:id', whatsappCtrl.updateScheduledPost);
+router.delete('/schedules/post/:id', whatsappCtrl.deleteScheduledPost);
 router.get('/groups/export', whatsappCtrl.exportGroupMembers);
 router.post('/status/post', upload.single('image'), whatsappCtrl.postStatus);
 
-// Campaigns
-router.post('/campaigns/start', upload.single('file'), whatsappCtrl.startCampaign);
+// Campaigns (accept Excel file and optional media)
+router.post('/campaigns/start', upload.fields([{ name: 'file', maxCount: 1 }, { name: 'media', maxCount: 1 }]), whatsappCtrl.startCampaign);
 
 // Knowledge base for WhatsApp Web
 router.post('/knowledge/upload', whatsappCtrl.upload.single('file'), whatsappCtrl.uploadKnowledgeBase);

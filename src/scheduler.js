@@ -7,6 +7,8 @@ const { LinkedInAccount } = require('./models/linkedinAccount');
 const { PinterestAccount } = require('./models/pinterestAccount');
 const TikTokAccount = require('./models/tiktokAccount');
 const YouTubeAccount = require('./models/youtubeAccount');
+const { WhatsappSchedule } = require('./models/whatsappSchedule');
+const whatsappService = require('./services/whatsappService');
 
 async function tryPublishNow(post) {
   console.log('Attempting to publish post:', {
@@ -1140,6 +1142,52 @@ function startScheduler() {
     for (const post of due) {
       await tryPublishNow(post);
     }
+
+    // WhatsApp due schedules
+    try {
+      const waDue = await WhatsappSchedule.findAll({ where: { status: 'pending', scheduledAt: { [Op.lte]: now } }, limit: 50 });
+      for (const job of waDue) {
+        try {
+          job.status = 'running';
+          await job.save();
+          if (job.type === 'groups') {
+            const { groupNames, message } = job.payload || {};
+            let media = null;
+            if (job.mediaPath) {
+              const fs = require('fs');
+              const path = require('path');
+              const buffer = fs.readFileSync(job.mediaPath);
+              media = { buffer, filename: path.basename(job.mediaPath), mimetype: undefined };
+            }
+            const result = await whatsappService.sendToMultipleGroups(job.userId, groupNames, message || '', media, undefined);
+            job.status = result?.success ? 'completed' : 'failed';
+            job.result = result?.message || null;
+            await job.save();
+          } else if (job.type === 'campaign') {
+            const { rows, messageTemplate, throttleMs } = job.payload || {};
+            let media = null;
+            if (job.mediaPath) {
+              const fs = require('fs');
+              const path = require('path');
+              const buffer = fs.readFileSync(job.mediaPath);
+              media = { buffer, filename: path.basename(job.mediaPath), mimetype: undefined };
+            }
+            const result = await whatsappService.startCampaign(job.userId, rows || [], messageTemplate || '', parseInt(throttleMs || 3000), media);
+            job.status = result?.success ? 'completed' : 'failed';
+            job.result = result?.message || null;
+            await job.save();
+          } else {
+            job.status = 'failed';
+            job.result = 'Unknown job type';
+            await job.save();
+          }
+        } catch (e) {
+          job.status = 'failed';
+          job.result = String(e?.message || e);
+          await job.save();
+        }
+      }
+    } catch {}
   });
 }
 

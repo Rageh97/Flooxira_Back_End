@@ -7,6 +7,8 @@ const xlsx = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 const whatsappService = require('../services/whatsappService');
+const { WhatsappSchedule } = require('../models/whatsappSchedule');
+const { Post } = require('../models/post');
 
 // OpenAI client
 const openai = new OpenAI({
@@ -366,11 +368,155 @@ async function sendToGroupsBulk(req, res) {
       media = { buffer, filename: file.originalname, mimetype: file.mimetype };
     }
 
-    const result = await whatsappService.sendToMultipleGroups(userId, groupNames, message || '', media, scheduleAt);
+    // If scheduleAt future => persist schedule
+    const now = Date.now();
+    const t = scheduleAt ? new Date(scheduleAt).getTime() : 0;
+    if (t && t > now) {
+      const record = await WhatsappSchedule.create({
+        userId,
+        type: 'groups',
+        payload: { groupNames, message },
+        mediaPath: media ? await saveTempMedia(media.buffer, media.filename) : null,
+        scheduledAt: new Date(t),
+        status: 'pending'
+      });
+      try { if (file) fs.unlinkSync(file.path); } catch {}
+      return res.json({ success: true, message: `Scheduled (#${record.id}) for ${new Date(t).toISOString()}` });
+    }
+
+    const result = await whatsappService.sendToMultipleGroups(userId, groupNames, message || '', media, undefined);
     try { if (file) fs.unlinkSync(file.path); } catch {}
     res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to send to groups', error: error.message });
+  }
+}
+
+async function saveTempMedia(buffer, filename) {
+  const dir = 'uploads/schedules';
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const p = `${dir}/${Date.now()}_${filename || 'file'}`;
+  fs.writeFileSync(p, buffer);
+  return p;
+}
+
+async function listSchedules(req, res) {
+  try {
+    const userId = req.userId;
+    const rows = await WhatsappSchedule.findAll({ where: { userId }, order: [['scheduledAt', 'ASC']] });
+    res.json({ success: true, schedules: rows });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to list schedules' });
+  }
+}
+
+async function cancelSchedule(req, res) {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+    const row = await WhatsappSchedule.findOne({ where: { id, userId } });
+    if (!row) return res.status(404).json({ success: false, message: 'Schedule not found' });
+    if (row.status !== 'pending') return res.status(400).json({ success: false, message: 'Only pending schedules can be cancelled' });
+    row.status = 'cancelled';
+    await row.save();
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to cancel schedule' });
+  }
+}
+
+async function updateSchedule(req, res) {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+    const { scheduledAt, payload } = req.body || {};
+    const row = await WhatsappSchedule.findOne({ where: { id, userId } });
+    if (!row) return res.status(404).json({ success: false, message: 'Schedule not found' });
+    if (row.status !== 'pending') return res.status(400).json({ success: false, message: 'Only pending schedules can be updated' });
+    if (scheduledAt) row.scheduledAt = new Date(scheduledAt);
+    if (payload && typeof payload === 'object') row.payload = payload;
+    await row.save();
+    res.json({ success: true, schedule: row });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to update schedule' });
+  }
+}
+
+async function deleteSchedule(req, res) {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+    const row = await WhatsappSchedule.findOne({ where: { id, userId } });
+    if (!row) return res.status(404).json({ success: false, message: 'Schedule not found' });
+    if (row.status === 'running') return res.status(400).json({ success: false, message: 'Cannot delete running schedule' });
+    await row.destroy();
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to delete schedule' });
+  }
+}
+
+async function listMonthlySchedules(req, res) {
+  try {
+    const userId = req.userId;
+    const { month, year } = req.query;
+    const y = parseInt(year || new Date().getFullYear());
+    const m = parseInt(month || (new Date().getMonth() + 1)); // 1-based
+    const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
+    const end = new Date(Date.UTC(y, m, 0, 23, 59, 59)); // last day
+
+    // WhatsApp schedules
+    const wa = await WhatsappSchedule.findAll({
+      where: { userId, scheduledAt: { [sequelize.Op.between]: [start, end] } },
+      order: [['scheduledAt', 'ASC']]
+    });
+
+    // Platform posts (scheduled)
+    const posts = await Post.findAll({
+      where: { userId, status: 'scheduled', scheduledAt: { [sequelize.Op.between]: [start, end] } },
+      order: [['scheduledAt', 'ASC']]
+    });
+
+    res.json({
+      success: true,
+      month: m,
+      year: y,
+      whatsapp: wa,
+      posts
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to list monthly schedules' });
+  }
+}
+
+async function updateScheduledPost(req, res) {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+    const { scheduledAt, content, platforms, format } = req.body || {};
+    const post = await Post.findOne({ where: { id, userId } });
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+    if (scheduledAt) post.scheduledAt = new Date(scheduledAt);
+    if (typeof content === 'string') post.content = content;
+    if (Array.isArray(platforms)) post.platforms = platforms;
+    if (format) post.format = format;
+    await post.save();
+    res.json({ success: true, post });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to update post' });
+  }
+}
+
+async function deleteScheduledPost(req, res) {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+    const post = await Post.findOne({ where: { id, userId } });
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+    await post.destroy();
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Failed to delete post' });
   }
 }
 
@@ -405,14 +551,64 @@ async function postStatus(req, res) {
 async function startCampaign(req, res) {
   try {
     const userId = req.userId;
-    const file = req.file;
-    const { messageTemplate, throttleMs } = req.body || {};
-    if (!file) return res.status(400).json({ success: false, message: 'Excel file required' });
-    const wb = xlsx.readFile(file.path);
+    const files = req.files || {};
+    const excelFile = Array.isArray(files?.file) ? files.file[0] : null;
+    const mediaFile = Array.isArray(files?.media) ? files.media[0] : null;
+    const { messageTemplate, throttleMs, scheduleAt, dailyCap, perNumberDelayMs } = req.body || {};
+    if (!excelFile) return res.status(400).json({ success: false, message: 'Excel file required' });
+    const wb = xlsx.readFile(excelFile.path);
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = xlsx.utils.sheet_to_json(ws);
-    const result = await whatsappService.startCampaign(userId, rows, messageTemplate || '', parseInt(throttleMs || '3000'));
-    try { fs.unlinkSync(file.path); } catch {}
+
+    const now = Date.now();
+    const t = scheduleAt ? new Date(scheduleAt).getTime() : 0;
+    const cap = dailyCap ? parseInt(String(dailyCap)) : 0;
+    const perDelay = perNumberDelayMs ? parseInt(String(perNumberDelayMs)) : parseInt(throttleMs || '3000');
+    if (t && t > now) {
+      const mediaPath = mediaFile ? await saveTempMedia(fs.readFileSync(mediaFile.path), mediaFile.originalname) : null;
+      if (cap && cap > 0 && rows.length > cap) {
+        // Split into multiple daily schedules
+        let idx = 0;
+        let dayOffset = 0;
+        while (idx < rows.length) {
+          const slice = rows.slice(idx, idx + cap);
+          const date = new Date(t);
+          date.setDate(date.getDate() + dayOffset);
+          await WhatsappSchedule.create({
+            userId,
+            type: 'campaign',
+            payload: { rows: slice, messageTemplate, throttleMs: perDelay },
+            mediaPath,
+            scheduledAt: date,
+            status: 'pending'
+          });
+          idx += cap;
+          dayOffset += 1;
+        }
+      } else {
+        await WhatsappSchedule.create({
+          userId,
+          type: 'campaign',
+          payload: { rows, messageTemplate, throttleMs: perDelay },
+          mediaPath,
+          scheduledAt: new Date(t),
+          status: 'pending'
+        });
+      }
+      try { if (excelFile) fs.unlinkSync(excelFile.path); } catch {}
+      try { if (mediaFile) fs.unlinkSync(mediaFile.path); } catch {}
+      return res.json({ success: true, message: `Campaign scheduled for ${new Date(t).toISOString()}` });
+    }
+
+    let media = null;
+    if (mediaFile) {
+      const buffer = fs.readFileSync(mediaFile.path);
+      media = { buffer, filename: mediaFile.originalname, mimetype: mediaFile.mimetype };
+    }
+
+    const result = await whatsappService.startCampaign(userId, rows, messageTemplate || '', perDelay, media);
+    try { if (excelFile) fs.unlinkSync(excelFile.path); } catch {}
+    try { if (mediaFile) fs.unlinkSync(mediaFile.path); } catch {}
     res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to start campaign', error: error.message });
@@ -479,6 +675,13 @@ module.exports = {
   postStatus,
   startCampaign,
   sendToGroupsBulk,
+  listSchedules,
+  cancelSchedule,
+  listMonthlySchedules,
+  updateSchedule,
+  deleteSchedule,
+  updateScheduledPost,
+  deleteScheduledPost,
   getChatHistory,
   getChatContacts,
   getBotStats,

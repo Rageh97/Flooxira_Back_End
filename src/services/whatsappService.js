@@ -858,7 +858,7 @@ class WhatsAppService {
   }
 
   // ===== Campaign (bulk sending) =====
-  async startCampaign(userId, rows, messageTemplate, throttleMs = 3000) {
+  async startCampaign(userId, rows, messageTemplate, throttleMs = 3000, media = null) {
     try {
       const client = this.userClients.get(userId);
       if (!client) return { success: false, message: 'Client not connected' };
@@ -867,7 +867,20 @@ class WhatsAppService {
         const raw = String(row.phone || row.number || '').replace(/\D/g, '');
         if (!raw) { failed++; continue; }
         const personalized = String(row.message || messageTemplate || '').replace(/\{\{name\}\}/gi, row.name || '');
-        const ok = await this.sendMessage(userId, raw, personalized || '');
+        let ok = false;
+        if (media && media.buffer) {
+          const chatId = raw.endsWith('@c.us') ? raw : `${raw}@c.us`;
+          const base64 = media.buffer.toString('base64');
+          const msgMedia = new MessageMedia(media.mimetype || 'application/octet-stream', base64, media.filename || 'file');
+          try {
+            await client.sendMessage(chatId, msgMedia, { caption: personalized || '' });
+            ok = true;
+          } catch (e) {
+            ok = false;
+          }
+        } else {
+          ok = await this.sendMessage(userId, raw, personalized || '');
+        }
         if (ok) sent++; else failed++;
         await new Promise(r => setTimeout(r, throttleMs));
       }
