@@ -464,8 +464,10 @@ async function listMonthlySchedules(req, res) {
     const { month, year } = req.query;
     const y = parseInt(year || new Date().getFullYear());
     const m = parseInt(month || (new Date().getMonth() + 1)); // 1-based
-    const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
-    const end = new Date(Date.UTC(y, m, 0, 23, 59, 59)); // last day
+    
+    // Use local timezone instead of UTC to avoid timezone issues
+    const start = new Date(y, m - 1, 1, 0, 0, 0);
+    const end = new Date(y, m, 0, 23, 59, 59); // last day
 
     console.log(`[Monthly Schedules] User: ${userId}, Month: ${m}, Year: ${y}`);
     console.log(`[Monthly Schedules] Date range: ${start.toISOString()} to ${end.toISOString()}`);
