@@ -466,6 +466,9 @@ async function listMonthlySchedules(req, res) {
     const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
     const end = new Date(Date.UTC(y, m, 0, 23, 59, 59)); // last day
 
+    console.log(`[Monthly Schedules] User: ${userId}, Month: ${m}, Year: ${y}`);
+    console.log(`[Monthly Schedules] Date range: ${start.toISOString()} to ${end.toISOString()}`);
+
     // WhatsApp schedules
     const wa = await WhatsappSchedule.findAll({
       where: { userId, scheduledAt: { [sequelize.Op.between]: [start, end] } },
@@ -478,6 +481,8 @@ async function listMonthlySchedules(req, res) {
       order: [['scheduledAt', 'ASC']]
     });
 
+    console.log(`[Monthly Schedules] Found ${wa.length} WhatsApp schedules and ${posts.length} posts`);
+
     res.json({
       success: true,
       month: m,
@@ -486,6 +491,7 @@ async function listMonthlySchedules(req, res) {
       posts
     });
   } catch (e) {
+    console.error('[Monthly Schedules] Error:', e);
     res.status(500).json({ success: false, message: 'Failed to list monthly schedules' });
   }
 }
