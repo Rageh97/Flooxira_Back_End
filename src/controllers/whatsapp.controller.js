@@ -471,13 +471,26 @@ async function listMonthlySchedules(req, res) {
 
     // WhatsApp schedules
     const wa = await WhatsappSchedule.findAll({
-      where: { userId, scheduledAt: { [sequelize.Op.between]: [start, end] } },
+      where: { 
+        userId, 
+        scheduledAt: { 
+          [sequelize.Op.gte]: start,
+          [sequelize.Op.lte]: end
+        } 
+      },
       order: [['scheduledAt', 'ASC']]
     });
 
     // Platform posts (scheduled)
     const posts = await Post.findAll({
-      where: { userId, status: 'scheduled', scheduledAt: { [sequelize.Op.between]: [start, end] } },
+      where: { 
+        userId, 
+        status: 'scheduled', 
+        scheduledAt: { 
+          [sequelize.Op.gte]: start,
+          [sequelize.Op.lte]: end
+        } 
+      },
       order: [['scheduledAt', 'ASC']]
     });
 
@@ -492,7 +505,13 @@ async function listMonthlySchedules(req, res) {
     });
   } catch (e) {
     console.error('[Monthly Schedules] Error:', e);
-    res.status(500).json({ success: false, message: 'Failed to list monthly schedules' });
+    console.error('[Monthly Schedules] Error message:', e.message);
+    console.error('[Monthly Schedules] Error stack:', e.stack);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to list monthly schedules',
+      error: e.message 
+    });
   }
 }
 
