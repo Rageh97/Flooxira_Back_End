@@ -9,6 +9,7 @@ const fs = require('fs');
 const whatsappService = require('../services/whatsappService');
 const { WhatsappSchedule } = require('../models/whatsappSchedule');
 const { Post } = require('../models/post');
+const { sequelize } = require('../sequelize');
 
 // OpenAI client
 const openai = new OpenAI({
