@@ -344,10 +344,18 @@ async function sendToGroupsBulk(req, res) {
   try {
     const userId = req.userId;
     const file = req.file;
-    const { groupNames, message, scheduleAt } = req.body || {};
-    if (!groupNames || !Array.isArray(groupNames) || groupNames.length === 0) {
-      return res.status(400).json({ success: false, message: 'groupNames (array) required' });
+  let { groupNames, message, scheduleAt } = req.body || {};
+  if (typeof groupNames === 'string') {
+    try {
+      const parsed = JSON.parse(groupNames);
+      if (Array.isArray(parsed)) groupNames = parsed;
+    } catch {
+      groupNames = String(groupNames).split(',').map(s => s.trim()).filter(Boolean);
     }
+  }
+  if (!groupNames || !Array.isArray(groupNames) || groupNames.length === 0) {
+    return res.status(400).json({ success: false, message: 'groupNames (array) required' });
+  }
     if (!message && !file) {
       return res.status(400).json({ success: false, message: 'message or media required' });
     }
