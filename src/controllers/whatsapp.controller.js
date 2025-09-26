@@ -10,6 +10,7 @@ const whatsappService = require('../services/whatsappService');
 const { WhatsappSchedule } = require('../models/whatsappSchedule');
 const { Post } = require('../models/post');
 const { sequelize } = require('../sequelize');
+const { Op } = require('sequelize');
 
 // OpenAI client
 const openai = new OpenAI({
@@ -474,8 +475,8 @@ async function listMonthlySchedules(req, res) {
       where: { 
         userId, 
         scheduledAt: { 
-          [sequelize.Op.gte]: start,
-          [sequelize.Op.lte]: end
+          [Op.gte]: start,
+          [Op.lte]: end
         } 
       },
       order: [['scheduledAt', 'ASC']]
@@ -487,8 +488,8 @@ async function listMonthlySchedules(req, res) {
         userId, 
         status: 'scheduled', 
         scheduledAt: { 
-          [sequelize.Op.gte]: start,
-          [sequelize.Op.lte]: end
+          [Op.gte]: start,
+          [Op.lte]: end
         } 
       },
       order: [['scheduledAt', 'ASC']]
