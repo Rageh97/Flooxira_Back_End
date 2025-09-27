@@ -105,7 +105,26 @@ async function assignChat(req, res) {
   }
 }
 
-module.exports = { listAgents, listChats, assignChat };
+async function getAllUsers(req, res) {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
+    const users = await User.findAll({
+      attributes: ['id', 'name', 'email', 'role', 'isActive', 'createdAt', 'updatedAt'],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({ success: true, users });
+  } catch (e) {
+    console.error('Error fetching users:', e);
+    res.status(500).json({ success: false, message: 'Failed to fetch users', error: e.message });
+  }
+}
+
+module.exports = { listAgents, listChats, assignChat, getAllUsers };
 
 
 

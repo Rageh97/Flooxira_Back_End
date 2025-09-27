@@ -10,6 +10,7 @@ router.use(requireAuth);
 router.get('/agents', ctrl.listAgents);
 router.get('/chats', ctrl.listChats);
 router.post('/chats/assign', ctrl.assignChat);
+router.get('/users', ctrl.getAllUsers);
 
 module.exports = router;
 
