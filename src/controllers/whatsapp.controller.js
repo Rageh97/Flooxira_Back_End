@@ -348,7 +348,7 @@ async function sendToGroupsBulk(req, res) {
   try {
     const userId = req.userId;
     const file = req.file;
-  let { groupNames, message, scheduleAt } = req.body || {};
+  let { groupNames, message, scheduleAt, timezoneOffset } = req.body || {};
   if (typeof groupNames === 'string') {
     try {
       const parsed = JSON.parse(groupNames);
@@ -374,15 +374,31 @@ async function sendToGroupsBulk(req, res) {
     const now = Date.now();
     let scheduledDate = null;
     if (scheduleAt) {
-      // Parse the datetime-local string as local time
-      // datetime-local inputs work in user's browser timezone
+      // Parse the datetime-local string with timezone offset
       const [datePart, timePart] = scheduleAt.split('T');
       const [year, month, day] = datePart.split('-').map(Number);
       const [hours, minutes] = timePart.split(':').map(Number);
+      
+      // Get user's timezone offset (in minutes)
+      const userTimezoneOffset = timezoneOffset ? parseInt(timezoneOffset) : 0;
+      const serverTimezoneOffset = new Date().getTimezoneOffset();
+      
+      // Calculate the difference between user and server timezone
+      const timezoneDifference = userTimezoneOffset - serverTimezoneOffset;
+      
+      // Create the date in user's timezone, then adjust for server timezone
       scheduledDate = new Date(year, month - 1, day, hours, minutes);
+      
+      // Adjust for timezone difference
+      if (timezoneDifference !== 0) {
+        scheduledDate = new Date(scheduledDate.getTime() + (timezoneDifference * 60 * 1000));
+      }
       
       // Log for debugging
       console.log(`[Schedule] User input: ${scheduleAt}`);
+      console.log(`[Schedule] User timezone offset: ${userTimezoneOffset} minutes`);
+      console.log(`[Schedule] Server timezone offset: ${serverTimezoneOffset} minutes`);
+      console.log(`[Schedule] Timezone difference: ${timezoneDifference} minutes`);
       console.log(`[Schedule] Parsed as local time: ${scheduledDate.toLocaleString()}`);
       console.log(`[Schedule] Stored as UTC: ${scheduledDate.toISOString()}`);
     }
@@ -445,22 +461,41 @@ async function updateSchedule(req, res) {
   try {
     const userId = req.userId;
     const { id } = req.params;
-    const { scheduledAt, payload } = req.body || {};
+    const { scheduledAt, payload, timezoneOffset } = req.body || {};
+    const mediaFile = req.file;
     const row = await WhatsappSchedule.findOne({ where: { id, userId } });
     if (!row) return res.status(404).json({ success: false, message: 'Schedule not found' });
     if (row.status !== 'pending') return res.status(400).json({ success: false, message: 'Only pending schedules can be updated' });
     
     if (scheduledAt) {
-      // Parse datetime-local string as local time to avoid timezone issues
+      // Parse datetime-local string with timezone offset
       if (scheduledAt.includes('T')) {
         const [datePart, timePart] = scheduledAt.split('T');
         const [year, month, day] = datePart.split('-').map(Number);
         const [hours, minutes] = timePart.split(':').map(Number);
-        const newScheduledDate = new Date(year, month - 1, day, hours, minutes);
+        
+        // Get user's timezone offset (in minutes)
+        const userTimezoneOffset = timezoneOffset ? parseInt(timezoneOffset) : 0;
+        const serverTimezoneOffset = new Date().getTimezoneOffset();
+        
+        // Calculate the difference between user and server timezone
+        const timezoneDifference = userTimezoneOffset - serverTimezoneOffset;
+        
+        // Create the date in user's timezone, then adjust for server timezone
+        let newScheduledDate = new Date(year, month - 1, day, hours, minutes);
+        
+        // Adjust for timezone difference
+        if (timezoneDifference !== 0) {
+          newScheduledDate = new Date(newScheduledDate.getTime() + (timezoneDifference * 60 * 1000));
+        }
+        
         row.scheduledAt = newScheduledDate;
         
         // Log for debugging
         console.log(`[Update Schedule] User input: ${scheduledAt}`);
+        console.log(`[Update Schedule] User timezone offset: ${userTimezoneOffset} minutes`);
+        console.log(`[Update Schedule] Server timezone offset: ${serverTimezoneOffset} minutes`);
+        console.log(`[Update Schedule] Timezone difference: ${timezoneDifference} minutes`);
         console.log(`[Update Schedule] Parsed as local time: ${newScheduledDate.toLocaleString()}`);
         console.log(`[Update Schedule] Stored as UTC: ${newScheduledDate.toISOString()}`);
       } else {
@@ -469,6 +504,39 @@ async function updateSchedule(req, res) {
     }
     
     if (payload && typeof payload === 'object') row.payload = payload;
+    
+    // Handle media file update
+    if (mediaFile) {
+      try {
+        // Delete old media file if it exists
+        if (row.mediaPath) {
+          const fs = require('fs');
+          const path = require('path');
+          try {
+            fs.unlinkSync(row.mediaPath);
+          } catch (e) {
+            console.log('Could not delete old media file:', e.message);
+          }
+        }
+        
+        // Save new media file
+        const buffer = fs.readFileSync(mediaFile.path);
+        row.mediaPath = await saveTempMedia(buffer, mediaFile.originalname);
+        
+        // Clean up temp file
+        try {
+          fs.unlinkSync(mediaFile.path);
+        } catch (e) {
+          console.log('Could not delete temp file:', e.message);
+        }
+        
+        console.log(`[Update Schedule] Media updated: ${mediaFile.originalname}`);
+      } catch (error) {
+        console.error('Failed to update media:', error);
+        return res.status(500).json({ success: false, message: 'Failed to update media file' });
+      }
+    }
+    
     await row.save();
     res.json({ success: true, schedule: row });
   } catch (e) {
@@ -554,21 +622,40 @@ async function updateScheduledPost(req, res) {
   try {
     const userId = req.userId;
     const { id } = req.params;
-    const { scheduledAt, content, platforms, format } = req.body || {};
+    const { scheduledAt, content, platforms, format, timezoneOffset } = req.body || {};
+    const mediaFile = req.file;
     const post = await Post.findOne({ where: { id, userId } });
     if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
     
     if (scheduledAt) {
-      // Parse datetime-local string as local time to avoid timezone issues
+      // Parse datetime-local string with timezone offset
       if (scheduledAt.includes('T')) {
         const [datePart, timePart] = scheduledAt.split('T');
         const [year, month, day] = datePart.split('-').map(Number);
         const [hours, minutes] = timePart.split(':').map(Number);
-        const newScheduledDate = new Date(year, month - 1, day, hours, minutes);
+        
+        // Get user's timezone offset (in minutes)
+        const userTimezoneOffset = timezoneOffset ? parseInt(timezoneOffset) : 0;
+        const serverTimezoneOffset = new Date().getTimezoneOffset();
+        
+        // Calculate the difference between user and server timezone
+        const timezoneDifference = userTimezoneOffset - serverTimezoneOffset;
+        
+        // Create the date in user's timezone, then adjust for server timezone
+        let newScheduledDate = new Date(year, month - 1, day, hours, minutes);
+        
+        // Adjust for timezone difference
+        if (timezoneDifference !== 0) {
+          newScheduledDate = new Date(newScheduledDate.getTime() + (timezoneDifference * 60 * 1000));
+        }
+        
         post.scheduledAt = newScheduledDate;
         
         // Log for debugging
         console.log(`[Update Post] User input: ${scheduledAt}`);
+        console.log(`[Update Post] User timezone offset: ${userTimezoneOffset} minutes`);
+        console.log(`[Update Post] Server timezone offset: ${serverTimezoneOffset} minutes`);
+        console.log(`[Update Post] Timezone difference: ${timezoneDifference} minutes`);
         console.log(`[Update Post] Parsed as local time: ${newScheduledDate.toLocaleString()}`);
         console.log(`[Update Post] Stored as UTC: ${newScheduledDate.toISOString()}`);
       } else {
@@ -579,6 +666,32 @@ async function updateScheduledPost(req, res) {
     if (typeof content === 'string') post.content = content;
     if (Array.isArray(platforms)) post.platforms = platforms;
     if (format) post.format = format;
+    
+    // Handle media file update
+    if (mediaFile) {
+      try {
+        // Save new media file and get URL
+        const buffer = fs.readFileSync(mediaFile.path);
+        const mediaPath = await saveTempMedia(buffer, mediaFile.originalname);
+        
+        // Update post with new media URL
+        post.mediaUrl = mediaPath;
+        post.imageUrl = mediaPath;
+        
+        // Clean up temp file
+        try {
+          fs.unlinkSync(mediaFile.path);
+        } catch (e) {
+          console.log('Could not delete temp file:', e.message);
+        }
+        
+        console.log(`[Update Post] Media updated: ${mediaFile.originalname}`);
+      } catch (error) {
+        console.error('Failed to update media:', error);
+        return res.status(500).json({ success: false, message: 'Failed to update media file' });
+      }
+    }
+    
     await post.save();
     res.json({ success: true, post });
   } catch (e) {
@@ -633,7 +746,7 @@ async function startCampaign(req, res) {
     const files = req.files || {};
     const excelFile = Array.isArray(files?.file) ? files.file[0] : null;
     const mediaFile = Array.isArray(files?.media) ? files.media[0] : null;
-    const { messageTemplate, throttleMs, scheduleAt, dailyCap, perNumberDelayMs } = req.body || {};
+    const { messageTemplate, throttleMs, scheduleAt, dailyCap, perNumberDelayMs, timezoneOffset } = req.body || {};
     if (!excelFile) return res.status(400).json({ success: false, message: 'Excel file required' });
     const wb = xlsx.readFile(excelFile.path);
     const ws = wb.Sheets[wb.SheetNames[0]];
@@ -642,15 +755,31 @@ async function startCampaign(req, res) {
     const now = Date.now();
     let scheduledDate = null;
     if (scheduleAt) {
-      // Parse the datetime-local string as local time
-      // datetime-local inputs work in user's browser timezone
+      // Parse the datetime-local string with timezone offset
       const [datePart, timePart] = scheduleAt.split('T');
       const [year, month, day] = datePart.split('-').map(Number);
       const [hours, minutes] = timePart.split(':').map(Number);
+      
+      // Get user's timezone offset (in minutes)
+      const userTimezoneOffset = timezoneOffset ? parseInt(timezoneOffset) : 0;
+      const serverTimezoneOffset = new Date().getTimezoneOffset();
+      
+      // Calculate the difference between user and server timezone
+      const timezoneDifference = userTimezoneOffset - serverTimezoneOffset;
+      
+      // Create the date in user's timezone, then adjust for server timezone
       scheduledDate = new Date(year, month - 1, day, hours, minutes);
+      
+      // Adjust for timezone difference
+      if (timezoneDifference !== 0) {
+        scheduledDate = new Date(scheduledDate.getTime() + (timezoneDifference * 60 * 1000));
+      }
       
       // Log for debugging
       console.log(`[Campaign Schedule] User input: ${scheduleAt}`);
+      console.log(`[Campaign Schedule] User timezone offset: ${userTimezoneOffset} minutes`);
+      console.log(`[Campaign Schedule] Server timezone offset: ${serverTimezoneOffset} minutes`);
+      console.log(`[Campaign Schedule] Timezone difference: ${timezoneDifference} minutes`);
       console.log(`[Campaign Schedule] Parsed as local time: ${scheduledDate.toLocaleString()}`);
       console.log(`[Campaign Schedule] Stored as UTC: ${scheduledDate.toISOString()}`);
     }
