@@ -443,7 +443,19 @@ async function updateSchedule(req, res) {
     const row = await WhatsappSchedule.findOne({ where: { id, userId } });
     if (!row) return res.status(404).json({ success: false, message: 'Schedule not found' });
     if (row.status !== 'pending') return res.status(400).json({ success: false, message: 'Only pending schedules can be updated' });
-    if (scheduledAt) row.scheduledAt = new Date(scheduledAt);
+    
+    if (scheduledAt) {
+      // Parse datetime-local string as local time to avoid timezone issues
+      if (scheduledAt.includes('T')) {
+        const [datePart, timePart] = scheduledAt.split('T');
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hours, minutes] = timePart.split(':').map(Number);
+        row.scheduledAt = new Date(year, month - 1, day, hours, minutes);
+      } else {
+        row.scheduledAt = new Date(scheduledAt);
+      }
+    }
+    
     if (payload && typeof payload === 'object') row.payload = payload;
     await row.save();
     res.json({ success: true, schedule: row });
@@ -533,7 +545,19 @@ async function updateScheduledPost(req, res) {
     const { scheduledAt, content, platforms, format } = req.body || {};
     const post = await Post.findOne({ where: { id, userId } });
     if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
-    if (scheduledAt) post.scheduledAt = new Date(scheduledAt);
+    
+    if (scheduledAt) {
+      // Parse datetime-local string as local time to avoid timezone issues
+      if (scheduledAt.includes('T')) {
+        const [datePart, timePart] = scheduledAt.split('T');
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hours, minutes] = timePart.split(':').map(Number);
+        post.scheduledAt = new Date(year, month - 1, day, hours, minutes);
+      } else {
+        post.scheduledAt = new Date(scheduledAt);
+      }
+    }
+    
     if (typeof content === 'string') post.content = content;
     if (Array.isArray(platforms)) post.platforms = platforms;
     if (format) post.format = format;
