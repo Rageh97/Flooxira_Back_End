@@ -23,6 +23,7 @@ async function createPost(req, res) {
     hashtags, 
     format = 'feed', 
     scheduledAt,
+    timezoneOffset,
     platforms = ['facebook'], // Default to Facebook, can include 'instagram', 'pinterest', 'linkedin', 'tiktok', 'youtube'
     pinterestBoardId
   } = req.body;
@@ -58,7 +59,29 @@ async function createPost(req, res) {
     return res.status(400).json({ message: 'mediaUrl is required for photo/video posts' });
   }
   
-  const status = scheduledAt ? 'scheduled' : 'draft';
+  // Handle timezone for scheduled posts
+  let finalScheduledAt = scheduledAt;
+  if (scheduledAt && timezoneOffset !== undefined) {
+    console.log(`[Posts] Timezone handling - User offset: ${timezoneOffset}, Server offset: ${new Date().getTimezoneOffset()}`);
+    console.log(`[Posts] Original scheduledAt: ${scheduledAt}`);
+    
+    // Parse the datetime-local string as local time
+    const localDate = new Date(scheduledAt);
+    console.log(`[Posts] Parsed local date: ${localDate.toISOString()}`);
+    
+    // Calculate timezone difference
+    const userOffset = parseInt(timezoneOffset); // User's offset in minutes
+    const serverOffset = new Date().getTimezoneOffset(); // Server's offset in minutes
+    const timezoneDifference = userOffset - serverOffset; // Difference in minutes
+    console.log(`[Posts] Timezone difference: ${timezoneDifference} minutes`);
+    
+    // Adjust the scheduled date
+    const adjustedDate = new Date(localDate.getTime() + (timezoneDifference * 60 * 1000));
+    finalScheduledAt = adjustedDate;
+    console.log(`[Posts] Final scheduledAt: ${finalScheduledAt.toISOString()}`);
+  }
+
+  const status = finalScheduledAt ? 'scheduled' : 'draft';
   const post = await Post.create({ 
     userId: req.userId, 
     type, 
@@ -68,7 +91,7 @@ async function createPost(req, res) {
     imageUrl: effectiveMediaUrl, 
     hashtags, 
     format, 
-    scheduledAt: scheduledAt || null, 
+    scheduledAt: finalScheduledAt || null, 
     status,
     platforms,
     pinterestBoardId: pinterestBoardId || null

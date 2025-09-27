@@ -1135,12 +1135,32 @@ async function getDefaultBoardId(accessToken) {
 }
 
 function startScheduler() {
-  // Every minute: publish any due scheduled posts
+    // Every minute: publish any due scheduled posts
   cron.schedule('* * * * *', async () => {
     const now = new Date();
     const due = await Post.findAll({ where: { status: 'scheduled', scheduledAt: { [Op.lte]: now } }, limit: 20 });
     for (const post of due) {
       await tryPublishNow(post);
+    }
+    
+    // Clean up old published posts (older than 30 days)
+    try {
+      const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+      const oldPosts = await Post.findAll({ 
+        where: { 
+          status: ['published', 'failed'],
+          scheduledAt: { [Op.lt]: thirtyDaysAgo }
+        }
+      });
+      
+      if (oldPosts.length > 0) {
+        console.log(`[Scheduler] Cleaning up ${oldPosts.length} old posts`);
+        for (const oldPost of oldPosts) {
+          await oldPost.destroy();
+        }
+      }
+    } catch (cleanupError) {
+      console.log(`[Scheduler] Post cleanup error: ${cleanupError.message}`);
     }
 
     // WhatsApp due schedules
@@ -1191,6 +1211,39 @@ function startScheduler() {
           job.result = String(e?.message || e);
           await job.save();
         }
+      }
+      
+      // Clean up old completed/failed schedules (older than 7 days)
+      try {
+        const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+        const oldSchedules = await WhatsappSchedule.findAll({ 
+          where: { 
+            status: ['completed', 'failed'],
+            scheduledAt: { [Op.lt]: sevenDaysAgo }
+          }
+        });
+        
+        if (oldSchedules.length > 0) {
+          console.log(`[Scheduler] Cleaning up ${oldSchedules.length} old schedules`);
+          for (const oldSchedule of oldSchedules) {
+            // Delete associated media file if it exists
+            if (oldSchedule.mediaPath) {
+              try {
+                const fs = require('fs');
+                if (fs.existsSync(oldSchedule.mediaPath)) {
+                  fs.unlinkSync(oldSchedule.mediaPath);
+                  console.log(`[Scheduler] Deleted media file: ${oldSchedule.mediaPath}`);
+                }
+              } catch (mediaError) {
+                console.log(`[Scheduler] Failed to delete media file: ${mediaError.message}`);
+              }
+            }
+            // Delete the schedule record
+            await oldSchedule.destroy();
+          }
+        }
+      } catch (cleanupError) {
+        console.log(`[Scheduler] Cleanup error: ${cleanupError.message}`);
       }
     } catch {}
   });

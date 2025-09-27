@@ -789,7 +789,19 @@ class WhatsAppService {
       const sendToChat = async (chat) => {
         if (media && media.buffer) {
           const base64 = media.buffer.toString('base64');
-          const msgMedia = new MessageMedia(media.mimetype || 'application/octet-stream', base64, media.filename || 'file');
+          // Properly detect MIME type for images
+          let mimeType = media.mimetype || 'application/octet-stream';
+          if (media.filename) {
+            const ext = media.filename.toLowerCase().split('.').pop();
+            if (['jpg', 'jpeg'].includes(ext)) mimeType = 'image/jpeg';
+            else if (ext === 'png') mimeType = 'image/png';
+            else if (ext === 'gif') mimeType = 'image/gif';
+            else if (ext === 'webp') mimeType = 'image/webp';
+            else if (['mp4', 'mov'].includes(ext)) mimeType = 'video/mp4';
+            else if (ext === 'avi') mimeType = 'video/avi';
+            else if (ext === 'mkv') mimeType = 'video/mkv';
+          }
+          const msgMedia = new MessageMedia(mimeType, base64, media.filename || 'file');
           await client.sendMessage(chat.id._serialized, msgMedia, { caption: message || '' });
         } else {
           await client.sendMessage(chat.id._serialized, message);
@@ -871,7 +883,19 @@ class WhatsAppService {
         if (media && media.buffer) {
           const chatId = raw.endsWith('@c.us') ? raw : `${raw}@c.us`;
           const base64 = media.buffer.toString('base64');
-          const msgMedia = new MessageMedia(media.mimetype || 'application/octet-stream', base64, media.filename || 'file');
+          // Properly detect MIME type for images
+          let mimeType = media.mimetype || 'application/octet-stream';
+          if (media.filename) {
+            const ext = media.filename.toLowerCase().split('.').pop();
+            if (['jpg', 'jpeg'].includes(ext)) mimeType = 'image/jpeg';
+            else if (ext === 'png') mimeType = 'image/png';
+            else if (ext === 'gif') mimeType = 'image/gif';
+            else if (ext === 'webp') mimeType = 'image/webp';
+            else if (['mp4', 'mov'].includes(ext)) mimeType = 'video/mp4';
+            else if (ext === 'avi') mimeType = 'video/avi';
+            else if (ext === 'mkv') mimeType = 'video/mkv';
+          }
+          const msgMedia = new MessageMedia(mimeType, base64, media.filename || 'file');
           try {
             await client.sendMessage(chatId, msgMedia, { caption: personalized || '' });
             ok = true;
