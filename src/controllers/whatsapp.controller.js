@@ -375,10 +375,16 @@ async function sendToGroupsBulk(req, res) {
     let scheduledDate = null;
     if (scheduleAt) {
       // Parse the datetime-local string as local time
+      // datetime-local inputs work in user's browser timezone
       const [datePart, timePart] = scheduleAt.split('T');
       const [year, month, day] = datePart.split('-').map(Number);
       const [hours, minutes] = timePart.split(':').map(Number);
       scheduledDate = new Date(year, month - 1, day, hours, minutes);
+      
+      // Log for debugging
+      console.log(`[Schedule] User input: ${scheduleAt}`);
+      console.log(`[Schedule] Parsed as local time: ${scheduledDate.toLocaleString()}`);
+      console.log(`[Schedule] Stored as UTC: ${scheduledDate.toISOString()}`);
     }
     const t = scheduledDate ? scheduledDate.getTime() : 0;
     if (t && t > now) {
@@ -450,7 +456,13 @@ async function updateSchedule(req, res) {
         const [datePart, timePart] = scheduledAt.split('T');
         const [year, month, day] = datePart.split('-').map(Number);
         const [hours, minutes] = timePart.split(':').map(Number);
-        row.scheduledAt = new Date(year, month - 1, day, hours, minutes);
+        const newScheduledDate = new Date(year, month - 1, day, hours, minutes);
+        row.scheduledAt = newScheduledDate;
+        
+        // Log for debugging
+        console.log(`[Update Schedule] User input: ${scheduledAt}`);
+        console.log(`[Update Schedule] Parsed as local time: ${newScheduledDate.toLocaleString()}`);
+        console.log(`[Update Schedule] Stored as UTC: ${newScheduledDate.toISOString()}`);
       } else {
         row.scheduledAt = new Date(scheduledAt);
       }
@@ -552,7 +564,13 @@ async function updateScheduledPost(req, res) {
         const [datePart, timePart] = scheduledAt.split('T');
         const [year, month, day] = datePart.split('-').map(Number);
         const [hours, minutes] = timePart.split(':').map(Number);
-        post.scheduledAt = new Date(year, month - 1, day, hours, minutes);
+        const newScheduledDate = new Date(year, month - 1, day, hours, minutes);
+        post.scheduledAt = newScheduledDate;
+        
+        // Log for debugging
+        console.log(`[Update Post] User input: ${scheduledAt}`);
+        console.log(`[Update Post] Parsed as local time: ${newScheduledDate.toLocaleString()}`);
+        console.log(`[Update Post] Stored as UTC: ${newScheduledDate.toISOString()}`);
       } else {
         post.scheduledAt = new Date(scheduledAt);
       }
@@ -625,10 +643,16 @@ async function startCampaign(req, res) {
     let scheduledDate = null;
     if (scheduleAt) {
       // Parse the datetime-local string as local time
+      // datetime-local inputs work in user's browser timezone
       const [datePart, timePart] = scheduleAt.split('T');
       const [year, month, day] = datePart.split('-').map(Number);
       const [hours, minutes] = timePart.split(':').map(Number);
       scheduledDate = new Date(year, month - 1, day, hours, minutes);
+      
+      // Log for debugging
+      console.log(`[Campaign Schedule] User input: ${scheduleAt}`);
+      console.log(`[Campaign Schedule] Parsed as local time: ${scheduledDate.toLocaleString()}`);
+      console.log(`[Campaign Schedule] Stored as UTC: ${scheduledDate.toISOString()}`);
     }
     const t = scheduledDate ? scheduledDate.getTime() : 0;
     const cap = dailyCap ? parseInt(String(dailyCap)) : 0;

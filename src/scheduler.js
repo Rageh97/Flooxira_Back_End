@@ -1146,7 +1146,12 @@ function startScheduler() {
     // WhatsApp due schedules
     try {
       const waDue = await WhatsappSchedule.findAll({ where: { status: 'pending', scheduledAt: { [Op.lte]: now } }, limit: 50 });
+      if (waDue.length > 0) {
+        console.log(`[Scheduler] Found ${waDue.length} due WhatsApp schedules`);
+        console.log(`[Scheduler] Current time: ${now.toLocaleString()} (${now.toISOString()})`);
+      }
       for (const job of waDue) {
+        console.log(`[Scheduler] Executing job ${job.id} scheduled for: ${new Date(job.scheduledAt).toLocaleString()} (${job.scheduledAt})`);
         try {
           job.status = 'running';
           await job.save();
