@@ -11,14 +11,14 @@ function signToken(user) {
 
 async function signUp(req, res) {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, phone, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: 'Email and password are required' });
     const existing = await User.findOne({ where: { email } });
     if (existing) return res.status(409).json({ message: 'Email already in use' });
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email, passwordHash, role: 'user', isActive: true });
+    const user = await User.create({ name, email, phone, passwordHash, role: 'user', isActive: true });
     const token = signToken(user);
-    return res.status(201).json({ user: { id: user.id, name: user.name, email: user.email, role: user.role }, token });
+    return res.status(201).json({ user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role }, token });
   } catch (err) {
     console.error('signUp error', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -35,7 +35,7 @@ async function signIn(req, res) {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
     const token = signToken(user);
-    return res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role }, token });
+    return res.json({ user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role }, token });
   } catch (err) {
     console.error('signIn error', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -50,7 +50,7 @@ async function me(req, res) {
     const payload = jwt.verify(token, JWT_SECRET);
     const user = await User.findByPk(payload.sub);
     if (!user) return res.status(401).json({ message: 'Unauthorized' });
-    return res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    return res.json({ user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role } });
   } catch (err) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
