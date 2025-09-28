@@ -70,6 +70,6 @@ const FacebookAccount = sequelize.define('FacebookAccount', {
 User.hasOne(FacebookAccount, { foreignKey: 'userId' });
 FacebookAccount.belongsTo(User, { foreignKey: 'userId' });
 
-module.exports = { FacebookAccount };
+module.exports = FacebookAccount;
 
 

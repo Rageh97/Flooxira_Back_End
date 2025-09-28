@@ -65,4 +65,4 @@ const PinterestAccount = sequelize.define('PinterestAccount', {
 User.hasOne(PinterestAccount, { foreignKey: 'userId' });
 PinterestAccount.belongsTo(User, { foreignKey: 'userId' });
 
-module.exports = { PinterestAccount };
+module.exports = PinterestAccount;

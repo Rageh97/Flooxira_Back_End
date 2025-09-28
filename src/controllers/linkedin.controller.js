@@ -133,23 +133,8 @@ async function exchangeCode(req, res) {
       console.log('Profile fetch error:', profileError.message);
     }
 
-    // Get email address (requires additional permission)
+    // Skip email fetch to avoid 403 errors - LinkedIn requires additional scope
     let emailData = null;
-    try {
-      const emailResponse = await fetchWithRetry('https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))', {
-        headers: { 
-          Authorization: `Bearer ${accessToken}`,
-          'X-Restli-Protocol-Version': '2.0.0'
-        }
-      });
-
-      if (emailResponse.ok) {
-        emailData = await emailResponse.json();
-        console.log('LinkedIn email data received');
-      }
-    } catch (emailError) {
-      console.log('Email fetch error:', emailError.message);
-    }
 
     // Extract user information (handle both OpenID Connect and traditional profile)
     let linkedinUserId = null;

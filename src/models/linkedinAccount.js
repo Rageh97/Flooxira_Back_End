@@ -64,7 +64,7 @@ const LinkedInAccount = sequelize.define('LinkedInAccount', {
 User.hasOne(LinkedInAccount, { foreignKey: 'userId' });
 LinkedInAccount.belongsTo(User, { foreignKey: 'userId' });
 
-module.exports = { LinkedInAccount };
+module.exports = LinkedInAccount;
 
 
 

@@ -19,7 +19,7 @@ async function checkConnections(req, res) {
       pinterest: false
     };
     
-    // Check Facebook connection
+    // Check Facebook connection (Instagram uses the same connection)
     try {
       const facebookAccount = await FacebookAccount.findOne({ where: { userId, isActive: true } });
       connections.facebook = !!facebookAccount;
