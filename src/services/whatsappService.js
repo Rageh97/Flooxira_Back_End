@@ -568,6 +568,8 @@ class WhatsAppService {
 
       try {
         await attemptSend();
+        // Log the sent message to database
+        await this.logChatMessage(userId, to, 'outgoing', message, 'manual', null);
         return true;
       } catch (sendErr) {
         console.log(`[WA] First send attempt failed to ${chatId}:`, sendErr?.message || sendErr);
@@ -575,6 +577,8 @@ class WhatsAppService {
         await new Promise(r => setTimeout(r, 500));
         try {
           await attemptSend();
+          // Log the sent message to database
+          await this.logChatMessage(userId, to, 'outgoing', message, 'manual', null);
           return true;
         } catch (retryErr) {
           console.log(`[WA] Retry send failed to ${chatId}:`, retryErr?.message || retryErr);

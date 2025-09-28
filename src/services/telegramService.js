@@ -277,8 +277,12 @@ class TelegramService {
         return false;
       }
 
-      await bot.telegram.sendMessage(chatId, message);
+      const result = await bot.telegram.sendMessage(chatId, message);
       console.log(`[TG] Message sent successfully to ${chatId}`);
+      
+      // Log the sent message to database
+      await this.logChatMessage(userId, chatId, 'private', 'User', 'outgoing', message, result.message_id, 'manual', null);
+      
       return true;
     } catch (error) {
       console.error(`[TG] Send message failed:`, error);
