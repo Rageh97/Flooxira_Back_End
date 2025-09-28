@@ -111,6 +111,39 @@ async function exchangeCode(req, res) {
     
     console.log('Pinterest account saved successfully');
     
+    // Automatically fetch and select the first board
+    try {
+      console.log('Auto-fetching Pinterest boards...');
+      
+      const pinterestBase = process.env.PINTEREST_API_BASE || (String(process.env.PINTEREST_USE_SANDBOX) === '1' ? 'https://api-sandbox.pinterest.com' : 'https://api.pinterest.com');
+      const boardsResponse = await fetch(`${pinterestBase}/v5/boards`, {
+        headers: { 
+          'Authorization': `Bearer ${tokenData.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (boardsResponse.ok) {
+        const boardsData = await boardsResponse.json();
+        console.log('Pinterest boards response:', JSON.stringify(boardsData, null, 2));
+        
+        if (boardsData.items && boardsData.items.length > 0) {
+          // Store the first board as default
+          const firstBoard = boardsData.items[0];
+          account.selectedBoardId = firstBoard.id;
+          account.selectedBoardName = firstBoard.name;
+          
+          await account.save();
+          console.log('Pinterest board auto-selected:', {
+            boardId: firstBoard.id,
+            boardName: firstBoard.name
+          });
+        }
+      }
+    } catch (error) {
+      console.log('Auto-fetch Pinterest boards failed (non-critical):', error.message);
+    }
+    
     return res.json({
       success: true,
       message: 'Pinterest account connected successfully',
@@ -118,7 +151,9 @@ async function exchangeCode(req, res) {
         id: account.id,
         username: account.username,
         fullName: account.fullName,
-        accountType: account.accountType
+        accountType: account.accountType,
+        selectedBoardId: account.selectedBoardId,
+        selectedBoardName: account.selectedBoardName
       }
     });
     

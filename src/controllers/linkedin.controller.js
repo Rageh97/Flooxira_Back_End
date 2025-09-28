@@ -198,6 +198,37 @@ async function exchangeCode(req, res) {
     account.accessToken = crypto.encrypt(accessToken);
     account.refreshToken = refreshToken ? crypto.encrypt(refreshToken) : null;
     account.tokenExpiresAt = expiresAt;
+    
+    // Automatically try to get and select first company (if user has admin access)
+    try {
+      console.log('Auto-fetching LinkedIn companies...');
+      
+      const companiesResponse = await fetchWithRetry('https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Restli-Protocol-Version': '2.0.0'
+        }
+      });
+      
+      if (companiesResponse.ok) {
+        const companiesData = await companiesResponse.json();
+        console.log('LinkedIn companies response:', JSON.stringify(companiesData, null, 2));
+        
+        if (companiesData.elements && companiesData.elements.length > 0) {
+          // Store the first company as default
+          const firstCompany = companiesData.elements[0];
+          account.selectedCompanyId = firstCompany['organizationalTarget~'].split(':').pop();
+          account.selectedCompanyName = firstCompany['organizationalTarget~'];
+          
+          console.log('LinkedIn company auto-selected:', {
+            companyId: account.selectedCompanyId,
+            companyName: account.selectedCompanyName
+          });
+        }
+      }
+    } catch (error) {
+      console.log('Auto-fetch LinkedIn companies failed (non-critical):', error.message);
+    }
     account.scope = scope;
     account.isActive = true;
     account.lastSyncAt = new Date();

@@ -58,11 +58,10 @@ async function exchangeCode(req, res) {
 
     return res.json({
       success: true,
+      message: 'YouTube account connected successfully. Please select your YouTube channel.',
       account: {
         id: account.id,
-        email: account.email,
-        channelId: account.channelId,
-        channelTitle: account.channelTitle
+        email: account.email
       }
     });
   } catch (err) {
@@ -101,6 +100,69 @@ async function disconnectYouTube(req, res) {
   }
 }
 
+async function getYouTubeChannels(req, res) {
+  try {
+    const account = await YouTubeAccount.findOne({ where: { userId: req.userId } });
+    if (!account) return res.status(404).json({ message: 'No YouTube account connected' });
+    
+    const oauth2Client = getOAuthClient();
+    oauth2Client.setCredentials({
+      access_token: account.accessToken,
+      refresh_token: account.refreshToken
+    });
+    
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+    const channelsResp = await youtube.channels.list({ 
+      mine: true, 
+      part: ['id', 'snippet', 'statistics'] 
+    });
+    
+    if (channelsResp.data.items && channelsResp.data.items.length > 0) {
+      const channels = channelsResp.data.items.map(channel => ({
+        id: channel.id,
+        title: channel.snippet.title,
+        description: channel.snippet.description,
+        thumbnail: channel.snippet.thumbnails?.default?.url,
+        subscriberCount: channel.statistics?.subscriberCount || 0,
+        videoCount: channel.statistics?.videoCount || 0
+      }));
+      
+      return res.json({ channels });
+    } else {
+      return res.json({ channels: [] });
+    }
+  } catch (err) {
+    console.error('YouTube channels error:', err);
+    return res.status(500).json({ message: 'Failed to get YouTube channels', error: err.message });
+  }
+}
+
+async function selectYouTubeChannel(req, res) {
+  try {
+    const { channelId, channelTitle } = req.body;
+    if (!channelId) return res.status(400).json({ message: 'Channel ID is required' });
+    
+    const account = await YouTubeAccount.findOne({ where: { userId: req.userId } });
+    if (!account) return res.status(404).json({ message: 'No YouTube account connected' });
+    
+    account.channelId = channelId;
+    account.channelTitle = channelTitle;
+    await account.save();
+    
+    return res.json({
+      success: true,
+      message: 'YouTube channel selected successfully',
+      channel: {
+        id: channelId,
+        title: channelTitle
+      }
+    });
+  } catch (err) {
+    console.error('YouTube channel selection error:', err);
+    return res.status(500).json({ message: 'Failed to select YouTube channel', error: err.message });
+  }
+}
+
 async function testYouTubeConnection(req, res) {
   try {
     const account = await YouTubeAccount.findOne({ where: { userId: req.userId } });
@@ -120,7 +182,14 @@ async function testYouTubeConnection(req, res) {
   }
 }
 
-module.exports = { exchangeCode, getYouTubeAccount, disconnectYouTube, testYouTubeConnection };
+module.exports = { 
+  exchangeCode, 
+  getYouTubeAccount, 
+  disconnectYouTube, 
+  testYouTubeConnection,
+  getYouTubeChannels,
+  selectYouTubeChannel
+};
 
 
 

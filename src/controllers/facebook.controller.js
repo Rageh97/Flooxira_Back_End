@@ -864,7 +864,7 @@ async function exchangeCode(req, res) {
     
     return res.json({
       success: true,
-      message: 'Facebook account connected successfully',
+      message: 'Facebook account connected successfully. Please select your Facebook page and Instagram account.',
       account: {
         id: account.id,
         name: account.name,
