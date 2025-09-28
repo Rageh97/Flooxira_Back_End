@@ -99,6 +99,7 @@ app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/pinterest', pinterestRoutes);
 app.use('/api/telegram', telegramRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/platforms', require('./routes/platforms.routes'));
 app.use('/uploads', express.static('uploads'));
 
 // Lightweight endpoint for Facebook connect with tester handling
