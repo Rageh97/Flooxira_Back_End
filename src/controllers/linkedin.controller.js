@@ -1,4 +1,4 @@
-const { LinkedInAccount } = require('../models/linkedinAccount');
+const LinkedInAccount = require('../models/linkedinAccount');
 const crypto = require('../utils/crypto');
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({default: f}) => f(...args)));
 
@@ -229,7 +229,6 @@ async function getLinkedInAccount(req, res) {
     const account = await LinkedInAccount.findOne({ 
       where: { 
         userId,
-        isActive: true,
         accessToken: { [require('sequelize').Op.ne]: '' } // Not empty
       } 
     });

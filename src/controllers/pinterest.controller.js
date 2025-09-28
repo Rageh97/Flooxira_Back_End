@@ -1,4 +1,4 @@
-const { PinterestAccount } = require('../models/pinterestAccount');
+const PinterestAccount = require('../models/pinterestAccount');
 const crypto = require('../utils/crypto');
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({default: f}) => f(...args)));
 

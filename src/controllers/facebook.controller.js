@@ -1,4 +1,4 @@
-const { FacebookAccount } = require('../models/facebookAccount');
+const FacebookAccount = require('../models/facebookAccount');
 const crypto = require('../utils/crypto');
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({default: f}) => f(...args)));
 
