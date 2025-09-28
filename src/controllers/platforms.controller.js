@@ -1,13 +1,15 @@
 const { User } = require('../models/user');
+const FacebookAccount = require('../models/facebookAccount');
+const LinkedInAccount = require('../models/linkedinAccount');
+const PinterestAccount = require('../models/pinterestAccount');
+const YouTubeAccount = require('../models/youtubeAccount');
+const TikTokAccount = require('../models/tiktokAccount');
 
 async function checkConnections(req, res) {
   try {
     const userId = req.user.id;
     
     // Check actual connection status for all platforms
-    // For now, we'll check if user has any stored tokens or connection data
-    // In a real implementation, you would check your OAuth token storage
-    
     const connections = {
       facebook: false,
       instagram: false,
@@ -17,33 +19,47 @@ async function checkConnections(req, res) {
       pinterest: false
     };
     
-    // TODO: Implement actual OAuth token checking
-    // Example implementations:
-    
     // Check Facebook connection
-    // const facebookToken = await getStoredToken(userId, 'facebook');
-    // connections.facebook = !!facebookToken && !isTokenExpired(facebookToken);
-    
-    // Check Instagram connection (usually same as Facebook)
-    // connections.instagram = connections.facebook; // Instagram uses Facebook's token
-    
-    // Check YouTube connection
-    // const youtubeToken = await getStoredToken(userId, 'youtube');
-    // connections.youtube = !!youtubeToken && !isTokenExpired(youtubeToken);
-    
-    // Check TikTok connection
-    // const tiktokToken = await getStoredToken(userId, 'tiktok');
-    // connections.tiktok = !!tiktokToken && !isTokenExpired(tiktokToken);
+    try {
+      const facebookAccount = await FacebookAccount.findOne({ where: { userId, isActive: true } });
+      connections.facebook = !!facebookAccount;
+      connections.instagram = !!facebookAccount; // Instagram uses Facebook's token
+    } catch (e) {
+      console.error('Error checking Facebook connection:', e);
+    }
     
     // Check LinkedIn connection
-    // const linkedinToken = await getStoredToken(userId, 'linkedin');
-    // connections.linkedin = !!linkedinToken && !isTokenExpired(linkedinToken);
+    try {
+      const linkedinAccount = await LinkedInAccount.findOne({ where: { userId, isActive: true } });
+      connections.linkedin = !!linkedinAccount;
+    } catch (e) {
+      console.error('Error checking LinkedIn connection:', e);
+    }
     
     // Check Pinterest connection
-    // const pinterestToken = await getStoredToken(userId, 'pinterest');
-    // connections.pinterest = !!pinterestToken && !isTokenExpired(pinterestToken);
+    try {
+      const pinterestAccount = await PinterestAccount.findOne({ where: { userId, isActive: true } });
+      connections.pinterest = !!pinterestAccount;
+    } catch (e) {
+      console.error('Error checking Pinterest connection:', e);
+    }
     
-    // For now, return all as disconnected until OAuth integration is complete
+    // Check YouTube connection
+    try {
+      const youtubeAccount = await YouTubeAccount.findOne({ where: { userId, isActive: true } });
+      connections.youtube = !!youtubeAccount;
+    } catch (e) {
+      console.error('Error checking YouTube connection:', e);
+    }
+    
+    // Check TikTok connection
+    try {
+      const tiktokAccount = await TikTokAccount.findOne({ where: { userId, isActive: true } });
+      connections.tiktok = !!tiktokAccount;
+    } catch (e) {
+      console.error('Error checking TikTok connection:', e);
+    }
+    
     res.json({ 
       success: true, 
       connections,

@@ -67,9 +67,12 @@ router.get('/callback', async (req, res) => {
   
   console.log('Facebook OAuth callback successful, redirecting with code');
   
+  // Check if this was an Instagram OAuth request
+  const platform = storedState.platform || 'facebook';
+  
   // Simply redirect to frontend with the code for processing
   // This was working before - the frontend will call /api/facebook/exchange
-  res.redirect(`${process.env.FRONTEND_URL}/settings?fb_code=${code}`);
+  res.redirect(`${process.env.FRONTEND_URL}/settings?platform=${platform}&fb_code=${code}`);
 });
 
 // ===== INSTAGRAM OAUTH ROUTES =====
@@ -77,7 +80,7 @@ router.get('/callback', async (req, res) => {
 
 router.get('/instagram', (req, res) => {
   const state = crypto.randomBytes(32).toString('hex');
-  oauthStates.set(state, { timestamp: Date.now() });
+  oauthStates.set(state, { timestamp: Date.now(), platform: 'instagram' });
   
   // Include Instagram-specific permissions
   const scopes = [
@@ -149,7 +152,7 @@ router.get('/youtube/callback', (req, res) => {
   if (Date.now() - s.timestamp > 5 * 60 * 1000) {
     return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?error=state_expired`);
   }
-  return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?youtube_code=${encodeURIComponent(code)}`);
+  return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?platform=youtube&youtube_code=${encodeURIComponent(code)}`);
 });
 
 
