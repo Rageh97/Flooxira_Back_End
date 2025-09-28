@@ -16,56 +16,46 @@ async function checkConnections(req, res) {
     
     // Check Facebook connection (Instagram uses the same connection)
     try {
-      const { getFacebookAccount } = require('./facebook.controller');
-      const facebookReq = { userId, user: { id: userId } };
-      const facebookRes = { json: (data) => data, status: () => ({ json: () => ({ connected: false }) }) };
-      const facebookData = await getFacebookAccount(facebookReq, facebookRes);
-      connections.facebook = facebookData.connected || false;
-      connections.instagram = facebookData.connected || false; // Instagram uses Facebook's token
+      const FacebookAccount = require('../models/facebookAccount');
+      const facebookAccount = await FacebookAccount.findOne({ where: { userId } });
+      connections.facebook = !!facebookAccount;
+      connections.instagram = !!facebookAccount; // Instagram uses Facebook's token
     } catch (e) {
       console.error('Error checking Facebook connection:', e);
     }
     
     // Check LinkedIn connection
     try {
-      const { getLinkedInAccount } = require('./linkedin.controller');
-      const linkedinReq = { userId, user: { id: userId } };
-      const linkedinRes = { json: (data) => data, status: () => ({ json: () => ({ connected: false }) }) };
-      const linkedinData = await getLinkedInAccount(linkedinReq, linkedinRes);
-      connections.linkedin = linkedinData.connected || false;
+      const LinkedInAccount = require('../models/linkedinAccount');
+      const linkedinAccount = await LinkedInAccount.findOne({ where: { userId } });
+      connections.linkedin = !!linkedinAccount;
     } catch (e) {
       console.error('Error checking LinkedIn connection:', e);
     }
     
     // Check Pinterest connection
     try {
-      const { getPinterestAccount } = require('./pinterest.controller');
-      const pinterestReq = { userId, user: { id: userId } };
-      const pinterestRes = { json: (data) => data, status: () => ({ json: () => ({ connected: false }) }) };
-      const pinterestData = await getPinterestAccount(pinterestReq, pinterestRes);
-      connections.pinterest = pinterestData.connected || false;
+      const PinterestAccount = require('../models/pinterestAccount');
+      const pinterestAccount = await PinterestAccount.findOne({ where: { userId } });
+      connections.pinterest = !!pinterestAccount;
     } catch (e) {
       console.error('Error checking Pinterest connection:', e);
     }
     
     // Check YouTube connection
     try {
-      const { getYouTubeAccount } = require('./youtube.controller');
-      const youtubeReq = { userId, user: { id: userId } };
-      const youtubeRes = { json: (data) => data, status: () => ({ json: () => ({ connected: false }) }) };
-      const youtubeData = await getYouTubeAccount(youtubeReq, youtubeRes);
-      connections.youtube = youtubeData.connected || false;
+      const YouTubeAccount = require('../models/youtubeAccount');
+      const youtubeAccount = await YouTubeAccount.findOne({ where: { userId } });
+      connections.youtube = !!youtubeAccount;
     } catch (e) {
       console.error('Error checking YouTube connection:', e);
     }
     
     // Check TikTok connection
     try {
-      const { getTikTokAccount } = require('./tiktok.controller');
-      const tiktokReq = { userId, user: { id: userId } };
-      const tiktokRes = { json: (data) => data, status: () => ({ json: () => ({ connected: false }) }) };
-      const tiktokData = await getTikTokAccount(tiktokReq, tiktokRes);
-      connections.tiktok = tiktokData.connected || false;
+      const TikTokAccount = require('../models/tiktokAccount');
+      const tiktokAccount = await TikTokAccount.findOne({ where: { userId } });
+      connections.tiktok = !!tiktokAccount;
     } catch (e) {
       console.error('Error checking TikTok connection:', e);
     }
