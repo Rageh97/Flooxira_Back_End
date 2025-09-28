@@ -72,6 +72,37 @@ router.get('/callback', async (req, res) => {
   res.redirect(`${process.env.FRONTEND_URL}/settings?fb_code=${code}`);
 });
 
+// ===== INSTAGRAM OAUTH ROUTES =====
+// Instagram uses Facebook OAuth with Instagram scopes
+
+router.get('/instagram', (req, res) => {
+  const state = crypto.randomBytes(32).toString('hex');
+  oauthStates.set(state, { timestamp: Date.now() });
+  
+  // Include Instagram-specific permissions
+  const scopes = [
+    'instagram_basic',
+    'instagram_manage_insights',
+    'instagram_content_publish',
+    'pages_manage_posts',
+    'pages_read_engagement', 
+    'pages_show_list',
+    'public_profile',
+    'email',
+    'pages_manage_metadata'
+  ].join(',');
+  
+  const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?` +
+    `client_id=${process.env.FB_APP_ID}` +
+    `&redirect_uri=${process.env.FB_REDIRECT_URI}` +
+    `&state=${state}` +
+    `&scope=${scopes}` +
+    `&auth_type=rerequest`;
+    
+  console.log('Initiating Instagram OAuth with scopes:', scopes);
+  res.redirect(authUrl);
+});
+
 // ===== YOUTUBE (GOOGLE) OAUTH ROUTES =====
 
 router.get('/youtube', (req, res) => {
