@@ -35,6 +35,9 @@ class TelegramPersonalService {
 
       // Start with only QR handler (no phoneNumber), do not await to avoid blocking
       const startPromise = client.start({
+        phoneNumber: async () => undefined,
+        phoneCode: async () => undefined,
+        password: async () => undefined,
         qrCode: async (code) => {
           try {
             const dataUrl = await QRCode.toDataURL(code);
