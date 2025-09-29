@@ -189,13 +189,17 @@ class TelegramPersonalService {
     const sess = row?.sessionString || '';
     const client = new TelegramClient(new StringSession(sess), apiId, apiHash, { connectionRetries: 5 });
     await client.connect();
+    this.userClients.set(userId, client);
     return client;
   }
 
   async sendCode(userId, phoneNumber) {
     try {
       const client = await this.getOrCreateClient(userId);
-      const res = await client.sendCode({ apiId: undefined, apiHash: undefined, phoneNumber });
+      if (!phoneNumber || typeof phoneNumber !== 'string') {
+        throw new Error('Invalid phoneNumber');
+      }
+      const res = await client.sendCode({ phoneNumber });
       // Some versions accept client.sendCode(phoneNumber)
       const codeHash = res?.phoneCodeHash || res?.phone_code_hash || res?.codeHash;
       if (!codeHash) throw new Error('Could not get codeHash');
