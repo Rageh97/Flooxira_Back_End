@@ -25,7 +25,8 @@ class TelegramWebService {
           '--disable-dev-shm-usage',
           '--disable-gpu',
           '--window-size=1200,900'
-        ]
+        ],
+        userDataDir: `./data/tg-web/user_${userId}`
       });
       const page = await browser.newPage();
       await page.setViewport({ width: 1200, height: 900 });
@@ -75,8 +76,16 @@ class TelegramWebService {
 
       // Also set up a periodic refresher to keep QR updated (in case it rotates)
       const refresher = setInterval(async () => {
-        try { await tryExtract(); } catch {}
-      }, 2000);
+        try {
+          // Update QR if still on login
+          await tryExtract();
+          // Also detect connected state to clear QR
+          const connected = await page.evaluate(() => !!document.querySelector('[contenteditable="true"]')).catch(() => false);
+          if (connected) {
+            this.qrCodes.delete(userId);
+          }
+        } catch {}
+      }, 1500);
       const state = this.userStates.get(userId) || {};
       state.qrRefresher = refresher;
       this.userStates.set(userId, state);
