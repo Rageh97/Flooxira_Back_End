@@ -33,52 +33,40 @@ class TelegramPersonalService {
 
       const client = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
 
-      // Generate QR login token
-      const { token } = await client.qrLogin({
-        // default is bot token; for user login we just call without params
-      });
-
-      // Token updates contain a "url" which can be encoded into QR
-      token.ready.then(async () => {
-        // Logged in successfully
-        await client.start({
-          qrCode: async () => {},
-          botAuthToken: undefined,
-          phoneNumber: undefined,
-          phoneCode: undefined,
-          onError: (err) => console.error('[TG Personal] start error:', err)
-        });
-        const newString = client.session.save();
-        if (row) {
-          row.sessionString = newString;
-          row.isActive = true;
-          await row.save();
-        } else {
-          await TelegramSession.create({ userId, sessionString: newString, isActive: true });
-        }
-        this.userClients.set(userId, client);
-        this.qrCodes.delete(userId);
-
-        // Attach message handler
-        this.attachMessageHandler(userId, client);
-      }).catch((e) => {
-        console.error('[TG Personal] QR token failed:', e?.message || e);
-      });
-
-      token.update.subscribe(async (value) => {
-        try {
-          if (value?.url) {
-            const dataUrl = await QRCode.toDataURL(value.url);
+      // Start with QR handler to support personal login
+      let qrEmitted = false;
+      await client.start({
+        phoneNumber: async () => undefined,
+        phoneCode: async () => undefined,
+        password: async () => undefined,
+        qrCode: async (code) => {
+          try {
+            const dataUrl = await QRCode.toDataURL(code);
             this.qrCodes.set(userId, dataUrl);
+            qrEmitted = true;
             console.log(`\n[TG Personal] QR for user ${userId}`);
-            qrcodeTerminal.generate(value.url, { small: true });
+            qrcodeTerminal.generate(code, { small: true });
+          } catch (e) {
+            console.error('[TG Personal] QR generation error:', e?.message || e);
           }
-        } catch (err) {
-          console.error('[TG Personal] QR generation error:', err);
-        }
+        },
+        onError: (err) => console.error('[TG Personal] start error:', err)
       });
 
-      return { success: true, status: 'qr_generated', qrCode: this.qrCodes.get(userId) || null };
+      // If we get here without throwing, we are logged in
+      const newString = client.session.save();
+      if (row) {
+        row.sessionString = newString;
+        row.isActive = true;
+        await row.save();
+      } else {
+        await TelegramSession.create({ userId, sessionString: newString, isActive: true });
+      }
+      this.userClients.set(userId, client);
+      this.qrCodes.delete(userId);
+      this.attachMessageHandler(userId, client);
+
+      return { success: true, status: 'CONNECTED', message: 'Telegram session started', qrCode: qrEmitted ? null : undefined };
     } catch (e) {
       console.error('[TG Personal] startSession error:', e);
       return { success: false, message: 'Failed to start Telegram session', error: e.message };
