@@ -1,8 +1,9 @@
-const tg = require('../services/telegramWebService');
+const tg = require('../services/telegramService');
 
 async function start(req, res) {
   const userId = req.userId;
-  const result = await tg.startSession(userId);
+  const { method, phone } = req.body || {};
+  const result = await tg.startSession(userId, { method, phone });
   res.json(result);
 }
 
@@ -13,10 +14,8 @@ async function status(req, res) {
 }
 
 async function qr(req, res) {
-  const userId = req.userId;
-  const qrCode = await tg.getQRCode(userId);
-  if (qrCode) return res.json({ success: true, qrCode });
-  res.json({ success: false, message: 'No QR available' });
+  // For GramJS QR flow, the QR is produced by start(method="qr")
+  res.json({ success: false, message: 'Use POST /start with method="qr" to get QR' });
 }
 
 async function stop(req, res) {
@@ -50,5 +49,13 @@ async function sendBulk(req, res) {
   res.json(result);
 }
 
-module.exports = { start, status, qr, stop, send, groups, sendBulk };
+async function verify(req, res) {
+  const userId = req.userId;
+  const { code, password } = req.body || {};
+  if (!code) return res.status(400).json({ success: false, message: 'code required' });
+  const result = await tg.verifyCode(userId, code, password);
+  res.json(result);
+}
+
+module.exports = { start, status, qr, stop, send, groups, sendBulk, verify };
 

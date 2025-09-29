@@ -12,6 +12,7 @@ router.post('/stop', ctrl.stop);
 router.post('/send', ctrl.send);
 router.get('/groups', ctrl.groups);
 router.post('/send-bulk', ctrl.sendBulk);
+router.post('/verify', ctrl.verify);
 
 module.exports = router;
 
