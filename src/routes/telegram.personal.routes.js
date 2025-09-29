@@ -14,6 +14,9 @@ router.get('/chats', ctrl.chats);
 router.get('/contacts', ctrl.contacts);
 router.get('/stats', ctrl.stats);
 router.get('/groups', ctrl.groups);
+// Phone + SMS auth
+router.post('/send-code', ctrl.sendCode);
+router.post('/sign-in', ctrl.signIn);
 
 module.exports = router;
 

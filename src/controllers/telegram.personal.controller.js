@@ -35,6 +35,21 @@ async function send(req, res) {
   res.json(ok ? { success: true } : { success: false, message: 'send failed' });
 }
 
+async function sendCode(req, res) {
+  const userId = req.userId;
+  const { phoneNumber } = req.body || {};
+  if (!phoneNumber) return res.status(400).json({ success: false, message: 'phoneNumber required' });
+  const result = await telegramPersonal.sendCode(userId, phoneNumber);
+  res.json(result);
+}
+
+async function signIn(req, res) {
+  const userId = req.userId;
+  const { phoneNumber, code, password } = req.body || {};
+  const result = await telegramPersonal.signIn(userId, phoneNumber, code, password);
+  res.json(result);
+}
+
 async function chats(req, res) {
   const userId = req.userId;
   const { chatId, limit = 50, offset = 0 } = req.query || {};
@@ -60,5 +75,5 @@ async function groups(req, res) {
   res.json(result);
 }
 
-module.exports = { start, status, qr, stop, send, chats, contacts, stats, groups, upload };
+module.exports = { start, status, qr, stop, send, chats, contacts, stats, groups, upload, sendCode, signIn };
 

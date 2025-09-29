@@ -16,6 +16,7 @@ class TelegramPersonalService {
   constructor() {
     this.userClients = new Map(); // userId -> TelegramClient
     this.qrCodes = new Map(); // userId -> dataURL
+    this.pendingAuth = new Map(); // userId -> { client, phone, codeHash }
   }
 
   async startSession(userId) {
@@ -34,10 +35,55 @@ class TelegramPersonalService {
       const client = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
 
       // Start with only QR handler (no phoneNumber), do not await to avoid blocking
+      // Prefer native qrLogin if available on this version
+      if (typeof client.qrLogin === 'function') {
+        await client.connect();
+        const { token } = await client.qrLogin();
+
+        token.update.subscribe(async (value) => {
+          try {
+            let url = value?.url;
+            if (!url && value?.token) {
+              const base = Buffer.from(value.token).toString('base64');
+              url = `tg://login?token=${base}`;
+            }
+            if (url) {
+              const dataUrl = await QRCode.toDataURL(url);
+              this.qrCodes.set(userId, dataUrl);
+              console.log(`\n[TG Personal] QR for user ${userId}`);
+              qrcodeTerminal.generate(url, { small: true });
+            }
+          } catch (err) {
+            console.error('[TG Personal] QR generation error:', err);
+          }
+        });
+
+        token.ready.then(async () => {
+          try {
+            const newString = client.session.save();
+            if (row) {
+              row.sessionString = newString;
+              row.isActive = true;
+              await row.save();
+            } else {
+              await TelegramSession.create({ userId, sessionString: newString, isActive: true });
+            }
+            this.userClients.set(userId, client);
+            this.qrCodes.delete(userId);
+            this.attachMessageHandler(userId, client);
+          } catch (e) {
+            console.error('[TG Personal] save session error:', e?.message || e);
+          }
+        }).catch((e) => {
+          console.error('[TG Personal] qrLogin error:', e?.message || e);
+        });
+
+        await new Promise(r => setTimeout(r, 500));
+        return { success: true, status: 'qr_generated', qrCode: this.qrCodes.get(userId) || null };
+      }
+
+      // Fallback: use start with only qrCode callback (do not provide phoneNumber)
       const startPromise = client.start({
-        phoneNumber: async () => undefined,
-        phoneCode: async () => undefined,
-        password: async () => undefined,
         qrCode: async (code) => {
           try {
             const dataUrl = await QRCode.toDataURL(code);
@@ -51,7 +97,6 @@ class TelegramPersonalService {
         onError: (err) => console.error('[TG Personal] start error:', err)
       });
 
-      // When login completes, persist session
       startPromise.then(async () => {
         try {
           const newString = client.session.save();
@@ -72,7 +117,6 @@ class TelegramPersonalService {
         console.error('[TG Personal] start() error:', e?.message || e);
       });
 
-      // Give QR a moment to generate
       await new Promise(r => setTimeout(r, 500));
       return { success: true, status: 'qr_generated', qrCode: this.qrCodes.get(userId) || null };
     } catch (e) {
@@ -131,6 +175,84 @@ class TelegramPersonalService {
     } catch (e) {
       console.error('[TG Personal] sendMessage error:', e?.message || e);
       return false;
+    }
+  }
+
+  // ===== Phone + SMS flow =====
+  async getOrCreateClient(userId) {
+    const existing = this.userClients.get(userId);
+    if (existing) return existing;
+    const apiId = parseInt(process.env.TG_API_ID || '0');
+    const apiHash = process.env.TG_API_HASH || '';
+    if (!apiId || !apiHash) throw new Error('Missing TG_API_ID/TG_API_HASH');
+    const row = await TelegramSession.findOne({ where: { userId, isActive: true }, order: [['updatedAt', 'DESC']] });
+    const sess = row?.sessionString || '';
+    const client = new TelegramClient(new StringSession(sess), apiId, apiHash, { connectionRetries: 5 });
+    await client.connect();
+    return client;
+  }
+
+  async sendCode(userId, phoneNumber) {
+    try {
+      const client = await this.getOrCreateClient(userId);
+      const res = await client.sendCode({ apiId: undefined, apiHash: undefined, phoneNumber });
+      // Some versions accept client.sendCode(phoneNumber)
+      const codeHash = res?.phoneCodeHash || res?.phone_code_hash || res?.codeHash;
+      if (!codeHash) throw new Error('Could not get codeHash');
+      this.pendingAuth.set(userId, { client, phone: phoneNumber, codeHash });
+      return { success: true, phoneCodeHash: codeHash };
+    } catch (e) {
+      return { success: false, message: e?.message || 'Failed to send code' };
+    }
+  }
+
+  async signIn(userId, phoneNumber, code, password) {
+    try {
+      let info = this.pendingAuth.get(userId);
+      const client = info?.client || await this.getOrCreateClient(userId);
+      const codeHash = info?.codeHash;
+      const phone = phoneNumber || info?.phone;
+      if (!phone) throw new Error('phoneNumber required');
+
+      try {
+        if (code) {
+          // Try sign in with code
+          if (typeof client.signInUser === 'function') {
+            await client.signInUser({ phoneNumber: phone, phoneCode: code, phoneCodeHash: codeHash });
+          } else if (typeof client.invoke === 'function') {
+            // Fallback
+            await client.signIn({ phoneNumber: phone, phoneCode: code, phoneCodeHash: codeHash });
+          }
+        }
+      } catch (err) {
+        const msg = String(err?.message || err);
+        if (/SESSION_PASSWORD_NEEDED|PASSWORD_HASH_INVALID/i.test(msg) || /2FA/i.test(msg)) {
+          if (!password) {
+            return { success: false, needPassword: true, message: 'Password required' };
+          }
+          await client.checkPassword(password);
+        } else {
+          throw err;
+        }
+      }
+
+      // Save session
+      const newString = client.session.save();
+      const row = await TelegramSession.findOne({ where: { userId }, order: [['updatedAt', 'DESC']] });
+      if (row) {
+        row.sessionString = newString;
+        row.isActive = true;
+        await row.save();
+      } else {
+        await TelegramSession.create({ userId, sessionString: newString, isActive: true, phoneNumber: phone });
+      }
+      this.userClients.set(userId, client);
+      this.qrCodes.delete(userId);
+      this.pendingAuth.delete(userId);
+      this.attachMessageHandler(userId, client);
+      return { success: true, status: 'CONNECTED' };
+    } catch (e) {
+      return { success: false, message: e?.message || 'Sign-in failed' };
     }
   }
 
