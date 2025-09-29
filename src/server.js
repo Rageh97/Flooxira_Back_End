@@ -16,7 +16,7 @@ const authCombinedRoutes = require('./routes/auth.combined');
 const tiktokRoutes = require('./routes/tiktok.routes');
 const whatsappRoutes = require('./routes/whatsapp.routes');
 const youtubeRoutes = require('./routes/youtube.routes');
-const sallaRoutes = require('./routes/salla.routes');
+// const sallaRoutes = require('./routes/salla.routes');
 const linkedinRoutes = require('./routes/linkedin.routes');
 const pinterestRoutes = require('./routes/pinterest.routes');
 const twitterRoutes = require('./routes/twitter.routes');
@@ -95,7 +95,7 @@ app.use('/auth', authCombinedRoutes); // Mount at /auth to create /auth/facebook
 app.use('/api/tiktok', tiktokRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/youtube', youtubeRoutes);
-app.use('/api/salla', sallaRoutes);
+// app.use('/api/salla', sallaRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/pinterest', pinterestRoutes);
 app.use('/api/twitter', twitterRoutes);
@@ -182,41 +182,41 @@ app.post('/connect-facebook', async (req, res) => {
 });
 
 // Endpoint to invite a tester directly when OAuth login is blocked
-app.post('/connect-facebook/invite', async (req, res) => {
-  try {
-    const { facebookUserId } = req.body || {};
-    const APP_ID = process.env.FB_APP_ID || process.env.APP_ID;
-    const APP_SECRET = process.env.FB_APP_SECRET || process.env.APP_SECRET;
-    if (!APP_ID || !APP_SECRET) {
-      console.error('Missing Facebook app configuration');
-      return res.status(500).json({ status: 'error', message: 'Server configuration error' });
-    }
-    if (!facebookUserId) {
-      return res.status(400).json({ status: 'error', message: 'facebookUserId is required' });
-    }
-    try {
-      const appAccessToken = `${APP_ID}|${APP_SECRET}`;
-      await axios.post(
-        `https://graph.facebook.com/${APP_ID}/roles`,
-        new URLSearchParams({ user: String(facebookUserId), role: 'testers' }),
-        { params: { access_token: appAccessToken }, timeout: 15000 }
-      );
-      return res.json({ status: 'pending', message: 'تمت إضافتك كتستر.. أعد المحاولة بعد قليل' });
-    } catch (err) {
-      const addStatus = err?.response?.status;
-      const addMsg = err?.response?.data?.error?.message || err?.message;
-      console.error('Direct tester invite failed:', { addStatus, addMsg });
-      return res.json({
-        status: 'invite',
-        message: 'تمت دعوتك كتستر.. افتح صفحة الدعوات على فيسبوك وقم بالقبول',
-        acceptUrl: `https://developers.facebook.com/apps/${APP_ID}/roles/testers/`
-      });
-    }
-  } catch (e) {
-    console.error('Unhandled /connect-facebook/invite error:', e);
-    return res.status(500).json({ status: 'error', message: 'Internal server error' });
-  }
-});
+// app.post('/connect-facebook/invite', async (req, res) => {
+//   try {
+//     const { facebookUserId } = req.body || {};
+//     const APP_ID = process.env.FB_APP_ID || process.env.APP_ID;
+//     const APP_SECRET = process.env.FB_APP_SECRET || process.env.APP_SECRET;
+//     if (!APP_ID || !APP_SECRET) {
+//       console.error('Missing Facebook app configuration');
+//       return res.status(500).json({ status: 'error', message: 'Server configuration error' });
+//     }
+//     if (!facebookUserId) {
+//       return res.status(400).json({ status: 'error', message: 'facebookUserId is required' });
+//     }
+//     try {
+//       const appAccessToken = `${APP_ID}|${APP_SECRET}`;
+//       await axios.post(
+//         `https://graph.facebook.com/${APP_ID}/roles`,
+//         new URLSearchParams({ user: String(facebookUserId), role: 'testers' }),
+//         { params: { access_token: appAccessToken }, timeout: 15000 }
+//       );
+//       return res.json({ status: 'pending', message: 'تمت إضافتك كتستر.. أعد المحاولة بعد قليل' });
+//     } catch (err) {
+//       const addStatus = err?.response?.status;
+//       const addMsg = err?.response?.data?.error?.message || err?.message;
+//       console.error('Direct tester invite failed:', { addStatus, addMsg });
+//       return res.json({
+//         status: 'invite',
+//         message: 'تمت دعوتك كتستر.. افتح صفحة الدعوات على فيسبوك وقم بالقبول',
+//         acceptUrl: `https://developers.facebook.com/apps/${APP_ID}/roles/testers/`
+//       });
+//     }
+//   } catch (e) {
+//     console.error('Unhandled /connect-facebook/invite error:', e);
+//     return res.status(500).json({ status: 'error', message: 'Internal server error' });
+//   }
+// });
 
 const port = process.env.PORT || 4000;
 
