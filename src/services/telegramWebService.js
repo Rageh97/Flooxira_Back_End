@@ -96,10 +96,14 @@ class TelegramWebService {
       const ctx = this.userBrowsers.get(userId);
       if (!ctx) return { success: true, status: 'disconnected', message: 'No active session' };
       const { page } = ctx;
-      const url = page.url();
-      if (/\/im\?p=/.test(url) || url.includes('/im')) {
-        return { success: true, status: 'CONNECTED', message: 'Telegram Web active' };
-      }
+      // Heuristic: if QR canvas exists => not connected; if composer exists => connected
+      const state = await page.evaluate(() => {
+        const qrCanvas = document.querySelector('canvas, canvas.qr__canvas, div.qr > canvas, div.qr_wrap canvas');
+        const composer = document.querySelector('[contenteditable="true"]');
+        return { hasQR: !!qrCanvas, hasComposer: !!composer, url: location.href };
+      }).catch(() => ({ hasQR: false, hasComposer: false, url: '' }));
+      if (state.hasComposer) return { success: true, status: 'CONNECTED', message: 'Telegram Web active' };
+      if (state.hasQR) return { success: true, status: 'INITIALIZING', message: 'Waiting for QR scan' };
       return { success: true, status: 'INITIALIZING', message: 'Waiting for login' };
     } catch (e) {
       return { success: false, status: 'error', message: e.message };
