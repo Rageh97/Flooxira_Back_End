@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
-const ctrl = require('../controllers/telegram.personal.controller');
+const ctrl = require('../controllers/telegram.web.controller');
 
 const router = Router();
 router.use(requireAuth);
@@ -10,13 +10,8 @@ router.get('/status', ctrl.status);
 router.get('/qr', ctrl.qr);
 router.post('/stop', ctrl.stop);
 router.post('/send', ctrl.send);
-router.get('/chats', ctrl.chats);
-router.get('/contacts', ctrl.contacts);
-router.get('/stats', ctrl.stats);
 router.get('/groups', ctrl.groups);
-// Phone + SMS auth
-router.post('/send-code', ctrl.sendCode);
-router.post('/sign-in', ctrl.signIn);
+router.post('/send-bulk', ctrl.sendBulk);
 
 module.exports = router;
 
