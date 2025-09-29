@@ -196,14 +196,21 @@ class TelegramPersonalService {
   async sendCode(userId, phoneNumber) {
     try {
       const client = await this.getOrCreateClient(userId);
-      if (!phoneNumber || typeof phoneNumber !== 'string') {
-        throw new Error('Invalid phoneNumber');
-      }
-      const res = await client.sendCode({ phoneNumber });
+      const apiId = parseInt(process.env.TG_API_ID || '0');
+      const apiHash = process.env.TG_API_HASH || '';
+      if (!apiId || !apiHash) throw new Error('Missing TG_API_ID/TG_API_HASH');
+      const phone = String(phoneNumber || '').trim();
+      if (!phone) throw new Error('Invalid phoneNumber');
+      const res = await client.sendCode({
+        apiId,
+        apiHash,
+        phoneNumber: phone,
+        settings: { allowFlashcall: false, currentNumber: false, allowAppHash: true }
+      });
       // Some versions accept client.sendCode(phoneNumber)
       const codeHash = res?.phoneCodeHash || res?.phone_code_hash || res?.codeHash;
       if (!codeHash) throw new Error('Could not get codeHash');
-      this.pendingAuth.set(userId, { client, phone: phoneNumber, codeHash });
+      this.pendingAuth.set(userId, { client, phone, codeHash });
       return { success: true, phoneCodeHash: codeHash };
     } catch (e) {
       return { success: false, message: e?.message || 'Failed to send code' };
