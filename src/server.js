@@ -20,6 +20,7 @@ const sallaRoutes = require('./routes/salla.routes');
 const linkedinRoutes = require('./routes/linkedin.routes');
 const pinterestRoutes = require('./routes/pinterest.routes');
 const telegramRoutes = require('./routes/telegram.routes');
+const telegramPersonalRoutes = require('./routes/telegram.personal.routes');
 const adminRoutes = require('./routes/admin.routes');
 const axios = require('axios');
 
@@ -98,6 +99,7 @@ app.use('/api/salla', sallaRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/pinterest', pinterestRoutes);
 app.use('/api/telegram', telegramRoutes);
+app.use('/api/telegram-personal', telegramPersonalRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/platforms', require('./routes/platforms.routes'));
 app.use('/uploads', express.static('uploads'));
