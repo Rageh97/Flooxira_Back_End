@@ -11,7 +11,8 @@ async function checkConnections(req, res) {
       youtube: false,
       tiktok: false,
       linkedin: false,
-      pinterest: false
+      pinterest: false,
+      twitter: false
     };
     
     // Check Facebook connection (Instagram uses the same connection)
@@ -58,6 +59,15 @@ async function checkConnections(req, res) {
       connections.tiktok = !!tiktokAccount;
     } catch (e) {
       console.error('Error checking TikTok connection:', e);
+    }
+
+    // Check Twitter connection
+    try {
+      const TwitterAccount = require('../models/twitterAccount');
+      const twitterAccount = await TwitterAccount.findOne({ where: { userId } });
+      connections.twitter = !!twitterAccount && !!twitterAccount.accessToken;
+    } catch (e) {
+      console.error('Error checking Twitter connection:', e);
     }
     
     res.json({ 

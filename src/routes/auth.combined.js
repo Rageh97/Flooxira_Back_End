@@ -380,6 +380,63 @@ router.get('/linkedin/callback', async (req, res) => {
   }
 });
 
+// ===== TWITTER OAUTH (AUTHORIZATION URL ONLY) =====
+
+router.get('/twitter', (req, res) => {
+  try {
+    const clientId = process.env.TWITTER_CLIENT_ID;
+    const redirectUri = process.env.TWITTER_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/twitter/callback`;
+    if (!clientId) {
+      return res.status(500).json({ message: 'Twitter integration not configured' });
+    }
+
+    const state = crypto.randomBytes(16).toString('hex');
+    oauthStates.set(state, { timestamp: Date.now() });
+
+    // PKCE
+    const codeVerifier = crypto.randomBytes(32).toString('hex');
+    const base64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const challenge = base64url(require('crypto').createHash('sha256').update(codeVerifier).digest());
+    oauthStates.set(`tw:${state}`, { codeVerifier, createdAt: Date.now() });
+
+    const scopes = [
+      'tweet.read',
+      'tweet.write',
+      'users.read',
+      'offline.access'
+    ].join(' ');
+
+    const url = new URL('https://twitter.com/i/oauth2/authorize');
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('client_id', clientId);
+    url.searchParams.set('redirect_uri', redirectUri);
+    url.searchParams.set('scope', scopes);
+    url.searchParams.set('state', state);
+    url.searchParams.set('code_challenge', challenge);
+    url.searchParams.set('code_challenge_method', 'S256');
+
+    return res.redirect(url.toString());
+  } catch (err) {
+    console.error('Failed to start Twitter OAuth:', err);
+    return res.status(500).json({ message: 'Failed to start Twitter OAuth' });
+  }
+});
+
+router.get('/twitter/callback', (req, res) => {
+  const { code, state, error, error_description } = req.query || {};
+  if (error) {
+    const msg = encodeURIComponent(error_description || error);
+    return res.redirect(`/settings?platform=twitter&error=${msg}`);
+  }
+  const st = oauthStates.get(`tw:${state}`);
+  const codeVerifier = st?.codeVerifier;
+  if (!state || !oauthStates.has(state)) {
+    return res.redirect(`/settings?platform=twitter&error=invalid_state`);
+  }
+  oauthStates.delete(state);
+  return res.redirect(`/settings?platform=twitter&twitter_code=${encodeURIComponent(code || '')}&code_verifier=${encodeURIComponent(codeVerifier || '')}`);
+});
+
 // ===== PINTEREST OAUTH ROUTES =====
 
 router.get('/pinterest', (req, res) => {

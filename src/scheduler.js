@@ -136,6 +136,38 @@ async function tryPublishNow(post) {
       }
     }
 
+    // Handle Twitter posting
+    if (post.platforms.includes('twitter')) {
+      try {
+        const TwitterAccount = require('./models/twitterAccount');
+        const twitterAccount = await TwitterAccount.findOne({ where: { userId: post.userId } });
+        if (twitterAccount && twitterAccount.accessToken) {
+          const textParts = [];
+          if (post.content) textParts.push(post.content);
+          if (post.linkUrl) textParts.push(post.linkUrl);
+          if (post.hashtags) textParts.push(post.hashtags);
+          const text = textParts.filter(Boolean).join(' ').trim().slice(0, 280);
+          const resp = await fetch('https://api.twitter.com/2/tweets', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${twitterAccount.accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+          });
+          const data = await resp.json();
+          if (resp.ok && data?.data?.id) {
+            post.twitterPostId = data.data.id;
+            post.status = 'published';
+            post.error = null;
+            await post.save();
+            return true;
+          } else {
+            console.log('Twitter publish failed:', data);
+          }
+        }
+      } catch (e) {
+        console.log('Twitter publish error:', e?.message || e);
+      }
+    }
+
     // Handle Pinterest posting if enabled
     if (post.platforms.includes('pinterest')) {
       const pinterestAccount = await PinterestAccount.findOne({ 
