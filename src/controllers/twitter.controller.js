@@ -35,10 +35,12 @@ async function exchangeCode(req, res) {
       codeVerifierPresent: !!codeVerifier
     });
 
-    const tokenResp = await axios.post('https://api.twitter.com/2/oauth2/token', params, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      auth: clientSecret ? undefined : undefined
-    });
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    if (clientSecret) {
+      headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+    }
+
+    const tokenResp = await axios.post('https://api.twitter.com/2/oauth2/token', params, { headers });
 
     const { access_token, refresh_token, expires_in, scope, token_type } = tokenResp.data || {};
 
