@@ -33,35 +33,24 @@ class TelegramPersonalService {
 
       const client = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
 
-      // Connect then use QR login API (no phone flow)
-      await client.connect();
-
-      const { token } = await client.qrLogin();
-
-      token.update.subscribe(async (value) => {
-        try {
-          let url = value?.url;
-          if (!url) {
-            const t = value?.token;
-            if (t) {
-              const base = Buffer.from(t).toString('base64');
-              url = `tg://login?token=${base}`;
-            }
-          }
-          if (url) {
-            const dataUrl = await QRCode.toDataURL(url);
+      // Start with only QR handler (no phoneNumber), do not await to avoid blocking
+      const startPromise = client.start({
+        qrCode: async (code) => {
+          try {
+            const dataUrl = await QRCode.toDataURL(code);
             this.qrCodes.set(userId, dataUrl);
             console.log(`\n[TG Personal] QR for user ${userId}`);
-            qrcodeTerminal.generate(url, { small: true });
+            qrcodeTerminal.generate(code, { small: true });
+          } catch (e) {
+            console.error('[TG Personal] QR generation error:', e?.message || e);
           }
-        } catch (err) {
-          console.error('[TG Personal] QR generation error:', err);
-        }
+        },
+        onError: (err) => console.error('[TG Personal] start error:', err)
       });
 
-      token.ready.then(async () => {
+      // When login completes, persist session
+      startPromise.then(async () => {
         try {
-          // Logged in
           const newString = client.session.save();
           if (row) {
             row.sessionString = newString;
@@ -77,9 +66,11 @@ class TelegramPersonalService {
           console.error('[TG Personal] save session error:', e?.message || e);
         }
       }).catch((e) => {
-        console.error('[TG Personal] QR login error:', e?.message || e);
+        console.error('[TG Personal] start() error:', e?.message || e);
       });
 
+      // Give QR a moment to generate
+      await new Promise(r => setTimeout(r, 500));
       return { success: true, status: 'qr_generated', qrCode: this.qrCodes.get(userId) || null };
     } catch (e) {
       console.error('[TG Personal] startSession error:', e);
