@@ -428,7 +428,8 @@ router.get('/twitter/callback', (req, res) => {
   console.log('[Twitter OAuth] Callback hit with query:', { codePresent: !!code, state, error, error_description });
   if (error) {
     const msg = encodeURIComponent(error_description || error);
-    return res.redirect(`/settings?platform=twitter&error=${msg}`);
+    const front = process.env.FRONTEND_URL || 'http://localhost:3000';
+    return res.redirect(`${front}/settings?platform=twitter&error=${msg}`);
   }
   const st = oauthStates.get(`tw:${state}`);
   const codeVerifier = st?.codeVerifier;
@@ -436,7 +437,8 @@ router.get('/twitter/callback', (req, res) => {
     return res.redirect(`/settings?platform=twitter&error=invalid_state`);
   }
   oauthStates.delete(state);
-  const redirectUrl = `/settings?platform=twitter&twitter_code=${encodeURIComponent(code || '')}&code_verifier=${encodeURIComponent(codeVerifier || '')}`;
+  const front = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const redirectUrl = `${front}/settings?platform=twitter&twitter_code=${encodeURIComponent(code || '')}&code_verifier=${encodeURIComponent(codeVerifier || '')}`;
   console.log('[Twitter OAuth] Redirecting back to frontend:', redirectUrl);
   return res.redirect(redirectUrl);
 });
