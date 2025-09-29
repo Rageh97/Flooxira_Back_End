@@ -415,6 +415,7 @@ router.get('/twitter', (req, res) => {
     url.searchParams.set('code_challenge', challenge);
     url.searchParams.set('code_challenge_method', 'S256');
 
+    console.log('[Twitter OAuth] Authorize URL:', url.toString());
     return res.redirect(url.toString());
   } catch (err) {
     console.error('Failed to start Twitter OAuth:', err);
@@ -424,6 +425,7 @@ router.get('/twitter', (req, res) => {
 
 router.get('/twitter/callback', (req, res) => {
   const { code, state, error, error_description } = req.query || {};
+  console.log('[Twitter OAuth] Callback hit with query:', { codePresent: !!code, state, error, error_description });
   if (error) {
     const msg = encodeURIComponent(error_description || error);
     return res.redirect(`/settings?platform=twitter&error=${msg}`);
@@ -434,7 +436,9 @@ router.get('/twitter/callback', (req, res) => {
     return res.redirect(`/settings?platform=twitter&error=invalid_state`);
   }
   oauthStates.delete(state);
-  return res.redirect(`/settings?platform=twitter&twitter_code=${encodeURIComponent(code || '')}&code_verifier=${encodeURIComponent(codeVerifier || '')}`);
+  const redirectUrl = `/settings?platform=twitter&twitter_code=${encodeURIComponent(code || '')}&code_verifier=${encodeURIComponent(codeVerifier || '')}`;
+  console.log('[Twitter OAuth] Redirecting back to frontend:', redirectUrl);
+  return res.redirect(redirectUrl);
 });
 
 // ===== PINTEREST OAUTH ROUTES =====

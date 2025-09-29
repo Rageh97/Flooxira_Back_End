@@ -28,6 +28,13 @@ async function exchangeCode(req, res) {
     params.set('client_id', clientId);
     if (codeVerifier) params.set('code_verifier', codeVerifier);
 
+    console.log('[Twitter OAuth] Exchanging code with params:', {
+      hasCode: !!code,
+      redirectUri,
+      hasClientId: !!clientId,
+      codeVerifierPresent: !!codeVerifier
+    });
+
     const tokenResp = await axios.post('https://api.twitter.com/2/oauth2/token', params, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       auth: clientSecret ? undefined : undefined
@@ -36,6 +43,14 @@ async function exchangeCode(req, res) {
     const { access_token, refresh_token, expires_in, scope, token_type } = tokenResp.data || {};
 
     // Fetch user info
+    console.log('[Twitter OAuth] Token response:', {
+      ok: true,
+      hasAccessToken: !!access_token,
+      hasRefreshToken: !!refresh_token,
+      expiresIn: expires_in,
+      scope
+    });
+
     const meResp = await axios.get('https://api.twitter.com/2/users/me', {
       headers: { Authorization: `Bearer ${access_token}` },
       params: { 'user.fields': 'name,username,profile_image_url' }
@@ -57,7 +72,11 @@ async function exchangeCode(req, res) {
 
     return res.json({ success: true, message: 'Twitter connected', account: { id: account.id, username: account.username } });
   } catch (err) {
-    console.error('Twitter exchangeCode error:', err?.response?.data || err);
+    console.error('Twitter exchangeCode error:', {
+      status: err?.response?.status,
+      data: err?.response?.data,
+      message: err?.message
+    });
     return res.status(400).json({ success: false, message: err?.response?.data?.error || err.message || 'Twitter exchange failed' });
   }
 }
