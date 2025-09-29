@@ -246,6 +246,23 @@ async function start() {
     console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables on every deployment...');
     const syncOptions = { force: true };
 
+    // Clean up legacy tables that might have FKs blocking drops (from removed Telegram models)
+    try {
+      const qi = sequelize.getQueryInterface();
+      const legacyTables = ['telegram_chats', 'telegram_accounts', 'telegram_schedules', 'telegram_sessions'];
+      for (const t of legacyTables) {
+        try {
+          // Drop foreign keys referencing users if needed
+          // Best-effort: attempt direct drop; MySQL will handle IF EXISTS
+          await sequelize.query(`DROP TABLE IF EXISTS \`${t}\``);
+        } catch (dropErr) {
+          console.warn(`[DB] Could not drop legacy table ${t}:`, dropErr?.message || dropErr);
+        }
+      }
+    } catch (legacyErr) {
+      console.warn('[DB] Legacy cleanup skipped:', legacyErr?.message || legacyErr);
+    }
+
     await sequelize.sync(syncOptions);
     
     if (syncOptions.force) {
