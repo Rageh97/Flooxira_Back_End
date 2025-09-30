@@ -66,14 +66,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// Capture raw body for webhook signature verification
+// Capture raw body for webhook signature verification (only for non-multipart requests)
 app.use((req, res, next) => {
+  const contentType = req.headers['content-type'] || '';
+  
+  // Skip body parsing for multipart/form-data (handled by multer)
+  if (contentType.includes('multipart/form-data')) {
+    return next();
+  }
+  
   let data = '';
   req.on('data', (chunk) => { data += chunk; });
   req.on('end', () => {
     req.rawBody = data;
     try {
-      if ((req.headers['content-type'] || '').includes('application/json') && data) {
+      if (contentType.includes('application/json') && data) {
         req.body = JSON.parse(data);
       }
     } catch {

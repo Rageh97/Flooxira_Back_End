@@ -39,7 +39,7 @@ router.post('/status/post', upload.single('image'), whatsappCtrl.postStatus);
 router.post('/campaigns/start', upload.fields([{ name: 'file', maxCount: 1 }, { name: 'media', maxCount: 1 }]), whatsappCtrl.startCampaign);
 
 // Knowledge base for WhatsApp Web
-router.post('/knowledge/upload', whatsappCtrl.upload.single('file'), whatsappCtrl.uploadKnowledgeBase);
+router.post('/knowledge/upload', whatsappCtrl.uploadSingle('file'), whatsappCtrl.uploadKnowledgeBase);
 router.get('/knowledge', whatsappCtrl.getKnowledgeBase);
 router.delete('/knowledge/:id', whatsappCtrl.deleteKnowledgeEntry);
 

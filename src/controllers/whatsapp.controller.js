@@ -70,6 +70,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fieldSize: 10 * 1024 * 1024, // 10MB limit for fields
+  },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
       cb(null, true);
@@ -78,6 +82,34 @@ const upload = multer({
     }
   }
 });
+
+// Wrapper to handle multer errors
+const uploadSingle = (fieldName) => {
+  return (req, res, next) => {
+    upload.single(fieldName)(req, res, (err) => {
+      if (err) {
+        console.error('Multer error:', err);
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ 
+            success: false, 
+            message: 'File too large. Maximum size is 10MB.' 
+          });
+        }
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return res.status(400).json({ 
+            success: false, 
+            message: 'Unexpected file field.' 
+          });
+        }
+        return res.status(400).json({ 
+          success: false, 
+          message: err.message || 'File upload error' 
+        });
+      }
+      next();
+    });
+  };
+};
 
 async function startWhatsAppSession(req, res) {
   try {
@@ -107,6 +139,14 @@ async function uploadKnowledgeBase(req, res) {
 
     if (!file) {
       return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    // Check for multer errors
+    if (req.fileValidationError) {
+      return res.status(400).json({ 
+        success: false, 
+        message: req.fileValidationError 
+      });
     }
 
     // Read and parse Excel file
@@ -910,5 +950,6 @@ module.exports = {
   uploadKnowledgeBase,
   getKnowledgeBase,
   deleteKnowledgeEntry,
-  upload
+  upload,
+  uploadSingle
 };
