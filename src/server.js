@@ -16,7 +16,7 @@ const authCombinedRoutes = require('./routes/auth.combined');
 const tiktokRoutes = require('./routes/tiktok.routes');
 const whatsappRoutes = require('./routes/whatsapp.routes');
 const youtubeRoutes = require('./routes/youtube.routes');
-// const sallaRoutes = require('./routes/salla.routes');
+const sallaRoutes = require('./routes/salla.routes');
 const linkedinRoutes = require('./routes/linkedin.routes');
 const pinterestRoutes = require('./routes/pinterest.routes');
 const twitterRoutes = require('./routes/twitter.routes');
@@ -66,7 +66,22 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+// Capture raw body for webhook signature verification
+app.use((req, res, next) => {
+  let data = '';
+  req.on('data', (chunk) => { data += chunk; });
+  req.on('end', () => {
+    req.rawBody = data;
+    try {
+      if ((req.headers['content-type'] || '').includes('application/json') && data) {
+        req.body = JSON.parse(data);
+      }
+    } catch {
+      // leave body as is if parsing fails
+    }
+    next();
+  });
+});
 app.use(cookieParser());
 
 app.get('/health', (_req, res) => {
@@ -96,7 +111,7 @@ app.use('/auth', authCombinedRoutes); // Mount at /auth to create /auth/facebook
 app.use('/api/tiktok', tiktokRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/youtube', youtubeRoutes);
-// app.use('/api/salla', sallaRoutes);
+app.use('/api/salla', sallaRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/pinterest', pinterestRoutes);
 app.use('/api/twitter', twitterRoutes);

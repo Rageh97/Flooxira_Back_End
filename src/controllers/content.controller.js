@@ -46,7 +46,18 @@ async function listItems(req, res) {
     where: { userId: req.userId, categoryId },
     order: [['updatedAt', 'DESC']]
   });
-  return res.json({ items });
+  const normalized = items.map((it) => {
+    try {
+      const raw = it.get({ plain: true });
+      if (raw && raw.attachments && typeof raw.attachments === 'string') {
+        raw.attachments = JSON.parse(raw.attachments);
+      }
+      return raw;
+    } catch {
+      return it;
+    }
+  });
+  return res.json({ items: normalized });
 }
 
 async function createItem(req, res) {
@@ -58,17 +69,22 @@ async function createItem(req, res) {
     categoryId,
     title,
     body: body || null,
-    attachments: Array.isArray(attachments) ? attachments : [],
+    attachments: Array.isArray(attachments) ? attachments : (attachments ? [attachments] : []),
     status
   });
-  return res.status(201).json({ item });
+  const plain = item.get({ plain: true });
+  return res.status(201).json({ item: plain });
 }
 
 async function getItem(req, res) {
   const { id } = req.params;
   const item = await ContentItem.findOne({ where: { id, userId: req.userId } });
   if (!item) return res.status(404).json({ message: 'Not found' });
-  return res.json({ item });
+  let plain = item.get({ plain: true });
+  if (plain && plain.attachments && typeof plain.attachments === 'string') {
+    try { plain.attachments = JSON.parse(plain.attachments); } catch {}
+  }
+  return res.json({ item: plain });
 }
 
 async function updateItem(req, res) {
@@ -78,7 +94,7 @@ async function updateItem(req, res) {
   const { title, body, attachments, status, platforms, scheduledAt, timezoneOffset } = req.body || {};
   if (title !== undefined) item.title = title;
   if (body !== undefined) item.body = body;
-  if (attachments !== undefined) item.attachments = Array.isArray(attachments) ? attachments : [];
+  if (attachments !== undefined) item.attachments = Array.isArray(attachments) ? attachments : (attachments ? [attachments] : []);
   if (status !== undefined) item.status = status;
   if (platforms !== undefined) item.platforms = Array.isArray(platforms) ? platforms : [];
   if (scheduledAt !== undefined) {
@@ -93,7 +109,8 @@ async function updateItem(req, res) {
     item.scheduledAt = finalScheduledAt;
   }
   await item.save();
-  return res.json({ item });
+  const plain = item.get({ plain: true });
+  return res.json({ item: plain });
 }
 
 async function deleteItem(req, res) {
