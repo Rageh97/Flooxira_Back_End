@@ -28,3 +28,5 @@ SallaStore.belongsTo(User, { foreignKey: 'userId' });
 module.exports = { SallaStore };
 
 
+
+

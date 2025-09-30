@@ -31,3 +31,5 @@ SallaEvent.belongsTo(SallaStore, { foreignKey: 'sallaStoreId' });
 module.exports = { SallaEvent };
 
 
+
+

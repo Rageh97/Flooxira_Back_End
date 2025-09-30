@@ -65,3 +65,5 @@ ContentItem.belongsTo(ContentCategory, { foreignKey: 'categoryId' });
 module.exports = { ContentItem };
 
 
+
+

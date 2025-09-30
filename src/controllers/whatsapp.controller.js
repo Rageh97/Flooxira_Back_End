@@ -196,7 +196,13 @@ async function uploadKnowledgeBase(req, res) {
       for (const columnName of columnNames) {
         const cellValue = row[columnName];
         if (cellValue && cellValue.toString().trim()) {
-          const keyword = cellValue.toString().trim();
+          let keyword = cellValue.toString().trim();
+          
+          // Truncate very long keywords to prevent database errors
+          // Keep first 1000 characters and add ellipsis if truncated
+          if (keyword.length > 1000) {
+            keyword = keyword.substring(0, 1000) + '...';
+          }
           
           // Avoid duplicate entries for the same keyword
           if (!entries.some(entry => entry.keyword === keyword)) {
@@ -218,8 +224,37 @@ async function uploadKnowledgeBase(req, res) {
       });
     }
 
-    // Bulk create entries
-    await KnowledgeBase.bulkCreate(entries);
+    // Bulk create entries with error handling
+    try {
+      await KnowledgeBase.bulkCreate(entries);
+    } catch (bulkError) {
+      console.error('Bulk create error:', bulkError);
+      
+      // If it's still a data too long error, try creating entries one by one with better error handling
+      if (bulkError.code === 'ER_DATA_TOO_LONG') {
+        console.log('Attempting to create entries individually to identify problematic data...');
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const entry of entries) {
+          try {
+            await KnowledgeBase.create(entry);
+            successCount++;
+          } catch (singleError) {
+            errorCount++;
+            console.error(`Failed to create entry with keyword: "${entry.keyword.substring(0, 50)}..." (length: ${entry.keyword.length})`);
+          }
+        }
+        
+        if (successCount === 0) {
+          throw new Error('All entries failed to create. Please check your Excel data for extremely long cell values.');
+        }
+        
+        console.log(`Created ${successCount} entries, ${errorCount} failed due to length limits`);
+      } else {
+        throw bulkError;
+      }
+    }
 
     // Clean up uploaded file
     fs.unlinkSync(file.path);

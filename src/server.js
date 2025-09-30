@@ -263,6 +263,19 @@ async function start() {
         console.log('Altering column tiktok_accounts.profilePicture to TEXT');
         await sequelize.query('ALTER TABLE `tiktok_accounts` MODIFY `profilePicture` TEXT NULL');
       }
+      
+      // Upgrade knowledge_base.keyword to TEXT if still VARCHAR(255)
+      try {
+        const kbDesc = await qi.describeTable('knowledge_base');
+        const kbCol = kbDesc && kbDesc.keyword;
+        const kbTypeStr = String(kbCol && kbCol.type || '').toLowerCase();
+        if (kbCol && /varchar\(\d+\)/.test(kbTypeStr)) {
+          console.log('Altering column knowledge_base.keyword to TEXT');
+          await sequelize.query('ALTER TABLE `knowledge_base` MODIFY `keyword` TEXT NOT NULL');
+        }
+      } catch (kbErr) {
+        console.warn('Knowledge base column migration skipped:', kbErr?.message || kbErr);
+      }
     }
   } catch (migErr) {
     console.warn('Non-fatal schema migration step failed:', migErr?.message || migErr);

@@ -17,7 +17,7 @@ const KnowledgeBase = sequelize.define('KnowledgeBase', {
     }
   },
   keyword: {
-    type: DataTypes.STRING(255),
+    type: DataTypes.TEXT,
     allowNull: false
   },
   answer: {

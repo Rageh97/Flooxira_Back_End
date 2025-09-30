@@ -36,3 +36,5 @@ ContentCategory.belongsTo(User, { foreignKey: 'userId' });
 module.exports = { ContentCategory };
 
 
+
+
