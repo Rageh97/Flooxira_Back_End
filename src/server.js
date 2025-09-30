@@ -22,6 +22,7 @@ const pinterestRoutes = require('./routes/pinterest.routes');
 const twitterRoutes = require('./routes/twitter.routes');
 const adminRoutes = require('./routes/admin.routes');
 const telegramWebRoutes = require('./routes/telegram.web.routes');
+const contentRoutes = require('./routes/content.routes');
 const axios = require('axios');
 
 const app = express();
@@ -102,6 +103,7 @@ app.use('/api/twitter', twitterRoutes);
 app.use('/api/telegram-web', telegramWebRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/platforms', require('./routes/platforms.routes'));
+app.use('/api/content', contentRoutes);
 app.use('/uploads', express.static('uploads'));
 
 // Lightweight endpoint for Facebook connect with tester handling
