@@ -164,108 +164,38 @@ async function uploadKnowledgeBase(req, res) {
 
     // Process and save new entries
     const entries = [];
-    
-    // Get column names from the first row
-    const firstRow = data[0];
-    const columnNames = Object.keys(firstRow);
-    
-    if (columnNames.length < 1) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Excel file must have at least 1 column with data.' 
-      });
-    }
-    
-    console.log(`Processing ${data.length} rows with columns: ${columnNames.join(', ')}`);
-    
     for (const row of data) {
-      // Create a comprehensive answer from all non-empty cells in the row
-      const rowData = [];
-      for (const columnName of columnNames) {
-        const cellValue = row[columnName];
-        if (cellValue && cellValue.toString().trim()) {
-          rowData.push(`${columnName}: ${cellValue.toString().trim()}`);
-        }
-      }
-      
-      if (rowData.length === 0) continue; // Skip empty rows
-      
-      const fullAnswer = rowData.join('\n');
-      
-      // Create entries for each non-empty cell as a potential keyword
-      for (const columnName of columnNames) {
-        const cellValue = row[columnName];
-        if (cellValue && cellValue.toString().trim()) {
-          let keyword = cellValue.toString().trim();
-          
-          // Truncate very long keywords to prevent database errors
-          // Keep first 1000 characters and add ellipsis if truncated
-          if (keyword.length > 1000) {
-            keyword = keyword.substring(0, 1000) + '...';
-          }
-          
-          // Avoid duplicate entries for the same keyword
-          if (!entries.some(entry => entry.keyword === keyword)) {
-            entries.push({
-              userId,
-              keyword: keyword,
-              answer: fullAnswer,
-              isActive: true
-            });
-          }
-        }
+      // Support both 'keyword' and 'key' column names (case insensitive)
+      const keyword = row.keyword || row.key || row.Keyword || row.Key;
+      const answer = row.answer || row.Answer;
+
+      if (keyword && answer) {
+        entries.push({
+          userId,
+          keyword: keyword.toString().trim(),
+          answer: answer.toString().trim(),
+          isActive: true
+        });
       }
     }
 
     if (entries.length === 0) {
       return res.status(400).json({ 
         success: false, 
-        message: 'No valid data found. Please ensure your Excel file has data in at least one column. Empty cells are ignored.' 
+        message: 'No valid keyword-answer pairs found. Please ensure your Excel file has "keyword" (or "key") and "answer" columns.' 
       });
     }
 
-    // Bulk create entries with error handling
-    try {
-      await KnowledgeBase.bulkCreate(entries);
-    } catch (bulkError) {
-      console.error('Bulk create error:', bulkError);
-      
-      // If it's still a data too long error, try creating entries one by one with better error handling
-      if (bulkError.code === 'ER_DATA_TOO_LONG') {
-        console.log('Attempting to create entries individually to identify problematic data...');
-        let successCount = 0;
-        let errorCount = 0;
-        
-        for (const entry of entries) {
-          try {
-            await KnowledgeBase.create(entry);
-            successCount++;
-          } catch (singleError) {
-            errorCount++;
-            console.error(`Failed to create entry with keyword: "${entry.keyword.substring(0, 50)}..." (length: ${entry.keyword.length})`);
-          }
-        }
-        
-        if (successCount === 0) {
-          throw new Error('All entries failed to create. Please check your Excel data for extremely long cell values.');
-        }
-        
-        console.log(`Created ${successCount} entries, ${errorCount} failed due to length limits`);
-      } else {
-        throw bulkError;
-      }
-    }
+    // Bulk create entries
+    await KnowledgeBase.bulkCreate(entries);
 
     // Clean up uploaded file
     fs.unlinkSync(file.path);
 
     res.json({
       success: true,
-      message: `Successfully uploaded ${entries.length} knowledge base entries from ${data.length} rows using ${columnNames.length} columns: ${columnNames.join(', ')}`,
-      count: entries.length,
-      rows: data.length,
-      columns: columnNames,
-      totalColumns: columnNames.length
+      message: `Successfully uploaded ${entries.length} knowledge base entries`,
+      count: entries.length
     });
 
   } catch (error) {

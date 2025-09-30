@@ -440,42 +440,21 @@ class WhatsAppService {
       });
 
       if (knowledgeEntries.length > 0) {
-        console.log(`[WA] Searching ${knowledgeEntries.length} knowledge base entries for: "${message.body}"`);
-        
-        // First try exact match (case insensitive)
-        const exactMatch = knowledgeEntries.find(entry => 
-          entry.keyword.toLowerCase().trim() === message.body.toLowerCase().trim()
-        );
-        
-        if (exactMatch) {
-          response = exactMatch.answer;
-          responseSource = 'knowledge_base';
-          knowledgeBaseMatch = exactMatch.keyword;
-          console.log(`[WA] Found exact knowledge base match: "${exactMatch.keyword}"`);
-        } else {
-          // Use fuzzy matching to find best answer
-          const fuse = new Fuse(knowledgeEntries, {
-            keys: ['keyword'],
-            threshold: 0.7, // Slightly more strict matching
-            includeScore: true,
-            ignoreLocation: true, // Don't care about position in text
-            findAllMatches: true // Find all matches, not just the first
-          });
+        // Use fuzzy matching to find best answer
+        const fuse = new Fuse(knowledgeEntries, {
+          keys: ['keyword'],
+          threshold: 0.6,
+          includeScore: true
+        });
 
-          const results = fuse.search(message.body);
-          
-          if (results.length > 0 && results[0].score < 0.7) {
-            response = results[0].item.answer;
-            responseSource = 'knowledge_base';
-            knowledgeBaseMatch = results[0].item.keyword;
-            console.log(`[WA] Found fuzzy knowledge base match: "${results[0].item.keyword}" (score: ${results[0].score})`);
-            console.log(`[WA] Response: ${response.substring(0, 100)}...`);
-          } else {
-            console.log(`[WA] No knowledge base match found. Best score: ${results.length > 0 ? results[0].score : 'N/A'}`);
-          }
+        const results = fuse.search(message.body);
+        
+        if (results.length > 0 && results[0].score < 0.6) {
+          response = results[0].item.answer;
+          responseSource = 'knowledge_base';
+          knowledgeBaseMatch = results[0].item.keyword;
+          console.log(`[WA] Found knowledge base match: ${results[0].item.keyword}`);
         }
-      } else {
-        console.log(`[WA] No knowledge base entries found for user ${userId}`);
       }
 
       // If no knowledge base match, use OpenAI as fallback
