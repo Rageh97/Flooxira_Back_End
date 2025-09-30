@@ -2,9 +2,9 @@ const cron = require('node-cron');
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({default: f}) => f(...args)));
 const { Op } = require('sequelize');
 const { Post } = require('./models/post');
-const { FacebookAccount } = require('./models/facebookAccount');
-const { LinkedInAccount } = require('./models/linkedinAccount');
-const { PinterestAccount } = require('./models/pinterestAccount');
+const FacebookAccount = require('./models/facebookAccount');
+const LinkedInAccount = require('./models/linkedinAccount');
+const PinterestAccount = require('./models/pinterestAccount');
 const TikTokAccount = require('./models/tiktokAccount');
 const YouTubeAccount = require('./models/youtubeAccount');
 const { WhatsappSchedule } = require('./models/whatsappSchedule');
@@ -1098,7 +1098,7 @@ async function tryPublishToPinterest(post, account) {
             if (tokenResp.ok && tdata?.access_token) {
               // Persist new token
               try {
-                const { PinterestAccount } = require('./models/pinterestAccount');
+                const PinterestAccount = require('./models/pinterestAccount');
                 const dbAcc = await PinterestAccount.findOne({ where: { id: account.id } });
                 if (dbAcc) {
                   dbAcc.accessToken = cryptoUtil.encrypt(tdata.access_token);
