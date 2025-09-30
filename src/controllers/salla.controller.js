@@ -23,7 +23,7 @@ async function handleWebhook(req, res) {
     const rawBody = req.rawBody || JSON.stringify(req.body || {});
     const payload = req.body || {};
     const eventType = payload?.event || payload?.type || payload?.data?.type || 'unknown';
-    const storeId = payload?.data?.store?.id || payload?.store_id || payload?.storeId || null;
+    const storeId = payload?.data?.store?.id || payload?.store_id || payload?.storeId || payload?.merchant || null;
 
     // Resolve user by path param or by store mapping
     let userId = Number(user_id) || null;
