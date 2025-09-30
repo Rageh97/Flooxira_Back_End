@@ -164,25 +164,57 @@ async function uploadKnowledgeBase(req, res) {
 
     // Process and save new entries
     const entries = [];
+    
+    // Get column names from the first row
+    const firstRow = data[0];
+    const columnNames = Object.keys(firstRow);
+    
+    if (columnNames.length < 1) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Excel file must have at least 1 column with data.' 
+      });
+    }
+    
+    console.log(`Processing ${data.length} rows with columns: ${columnNames.join(', ')}`);
+    
     for (const row of data) {
-      // Support both 'keyword' and 'key' column names (case insensitive)
-      const keyword = row.keyword || row.key || row.Keyword || row.Key;
-      const answer = row.answer || row.Answer;
-
-      if (keyword && answer) {
-        entries.push({
-          userId,
-          keyword: keyword.toString().trim(),
-          answer: answer.toString().trim(),
-          isActive: true
-        });
+      // Create a comprehensive answer from all non-empty cells in the row
+      const rowData = [];
+      for (const columnName of columnNames) {
+        const cellValue = row[columnName];
+        if (cellValue && cellValue.toString().trim()) {
+          rowData.push(`${columnName}: ${cellValue.toString().trim()}`);
+        }
+      }
+      
+      if (rowData.length === 0) continue; // Skip empty rows
+      
+      const fullAnswer = rowData.join('\n');
+      
+      // Create entries for each non-empty cell as a potential keyword
+      for (const columnName of columnNames) {
+        const cellValue = row[columnName];
+        if (cellValue && cellValue.toString().trim()) {
+          const keyword = cellValue.toString().trim();
+          
+          // Avoid duplicate entries for the same keyword
+          if (!entries.some(entry => entry.keyword === keyword)) {
+            entries.push({
+              userId,
+              keyword: keyword,
+              answer: fullAnswer,
+              isActive: true
+            });
+          }
+        }
       }
     }
 
     if (entries.length === 0) {
       return res.status(400).json({ 
         success: false, 
-        message: 'No valid keyword-answer pairs found. Please ensure your Excel file has "keyword" (or "key") and "answer" columns.' 
+        message: 'No valid data found. Please ensure your Excel file has data in at least one column. Empty cells are ignored.' 
       });
     }
 
@@ -194,8 +226,11 @@ async function uploadKnowledgeBase(req, res) {
 
     res.json({
       success: true,
-      message: `Successfully uploaded ${entries.length} knowledge base entries`,
-      count: entries.length
+      message: `Successfully uploaded ${entries.length} knowledge base entries from ${data.length} rows using ${columnNames.length} columns: ${columnNames.join(', ')}`,
+      count: entries.length,
+      rows: data.length,
+      columns: columnNames,
+      totalColumns: columnNames.length
     });
 
   } catch (error) {
