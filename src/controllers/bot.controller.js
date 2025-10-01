@@ -114,6 +114,13 @@ async function uploadExcel(req, res) {
     return res.json({ success: true, fieldsCreated: toCreate.length, rowsCreated: normalizedRows.length });
   } catch (e) {
     return res.status(500).json({ message: e?.message || 'Failed to upload Excel' });
+  } finally {
+    try {
+      if (req.file?.path) {
+        const fs = require('fs');
+        fs.unlinkSync(req.file.path);
+      }
+    } catch {}
   }
 }
 
