@@ -4,11 +4,12 @@ const { Op } = require('sequelize');
 const XLSX = require('xlsx');
 
 function sanitizeFieldName(name) {
+  // Preserve Unicode letters/numbers (e.g., Arabic), collapse spaces to underscore
+  // Remove characters that are not letters, numbers, or underscore
   return String(name || '')
     .trim()
-    .toLowerCase()
     .replace(/\s+/g, '_')
-    .replace(/[^a-z0-9_]/g, '')
+    .replace(/[^\p{L}\p{N}_]/gu, '')
     .slice(0, 120) || 'field';
 }
 
@@ -65,6 +66,20 @@ async function listData(req, res) {
   const offset = Math.max(Number(req.query.offset) || 0, 0);
   const { rows, count } = await BotData.findAndCountAll({ where: { userId }, order: [['createdAt','DESC']], limit, offset });
   return res.json({ rows, count, limit, offset });
+}
+
+async function deleteData(req, res) {
+  try {
+    const userId = req.userId;
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid id' });
+    const row = await BotData.findOne({ where: { id, userId } });
+    if (!row) return res.status(404).json({ message: 'Not found' });
+    await row.destroy();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ message: e?.message || 'Failed to delete row' });
+  }
 }
 
 async function uploadExcel(req, res) {
@@ -124,6 +139,6 @@ async function uploadExcel(req, res) {
   }
 }
 
-module.exports = { addField, listFields, saveData, listData, uploadExcel };
+module.exports = { addField, listFields, saveData, listData, deleteData, uploadExcel };
 
 

@@ -24,6 +24,7 @@ router.post('/fields', ctrl.addField);
 router.get('/fields', ctrl.listFields);
 router.post('/data', ctrl.saveData);
 router.get('/data', ctrl.listData);
+router.delete('/data/:id', ctrl.deleteData);
 router.post('/upload', upload.single('file'), ctrl.uploadExcel);
 
 module.exports = router;
