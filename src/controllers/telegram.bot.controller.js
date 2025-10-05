@@ -554,6 +554,6 @@ module.exports = {
   connect, webhook, info, testBot, getChat, getChatAdmins, promoteMember, 
 	getUpdates, getChatHistory, getChatStats, getChatContacts, exportMembers, getChatMembersInfo, getBotChats,
   sendTemplateMessage, getActiveTemplates, findMatchingTemplate, testTemplateMatching,
-  createTelegramCampaign, listTelegramCampaigns
+  createTelegramCampaign, listTelegramCampaigns, listTelegramMonthlySchedules
 };
 
