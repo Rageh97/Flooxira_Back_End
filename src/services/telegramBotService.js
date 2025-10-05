@@ -770,6 +770,21 @@ class TelegramBotService {
 			};
 			
 		} catch (err) {
+			const desc = err?.response?.data?.description || err?.message || '';
+			if (/can't use getUpdates method while webhook is active/i.test(desc) || (err?.response?.status === 409)) {
+				console.warn('[TG-Bot] getUpdates blocked by active webhook; falling back to DB chat history');
+				const { Op } = require('sequelize');
+				const rows = await TelegramChat.findAll({ where: { userId }, order: [['timestamp','DESC']], limit: 500 });
+				const map = new Map();
+				for (const r of rows) {
+					if (!map.has(r.chatId)) {
+						map.set(r.chatId, { id: r.chatId, title: r.chatTitle || `Chat_${r.chatId}`, type: r.chatType || 'unknown', lastActivity: r.timestamp || new Date(), canManage: false });
+					}
+				}
+				const chats = Array.from(map.values());
+				chats.sort((a,b)=> new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
+				return { success: true, chats, total: chats.length, note: 'Webhook active; showing chats from recent activity. Disable webhook to use getUpdates for broader discovery.' };
+			}
 			console.error('[TG-Bot] Get bot chats failed:', err.message);
 			if (err.response) {
 				console.error('[TG-Bot] Response status:', err.response.status);
