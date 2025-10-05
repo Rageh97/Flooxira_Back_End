@@ -131,6 +131,23 @@ class TelegramBotService {
 		}
 	}
 
+	async sendMediaUrl(userId, chatId, mediaUrl, caption = '') {
+		const bot = await this.getActiveBot(userId);
+		if (!bot || !bot.token) throw new Error('No active bot found');
+		const lower = String(mediaUrl).toLowerCase();
+		let method = 'sendDocument';
+		let field = 'document';
+		if (/(\.jpg|\.jpeg|\.png|\.gif|\.webp)(\?|$)/.test(lower)) { method = 'sendPhoto'; field = 'photo'; }
+		else if (/(\.mp4|\.mov|\.m4v)(\?|$)/.test(lower)) { method = 'sendVideo'; field = 'video'; }
+		const url = `https://api.telegram.org/bot${encodeURIComponent(bot.token)}/${method}`;
+		const payload = { chat_id: chatId, parse_mode: 'HTML' };
+		payload[field] = mediaUrl;
+		if (caption) payload['caption'] = caption;
+		const resp = await axios.post(url, payload, { timeout: 20000 });
+		if (!resp.data?.ok) throw new Error(resp.data?.description || 'Failed to send media');
+		return resp.data.result;
+	}
+
 	async getChat(userId, chatId) {
 		const bot = await this.getActiveBot(userId);
 		if (!bot || !bot.token) throw new Error('No active bot found');

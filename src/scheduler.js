@@ -1294,7 +1294,13 @@ function startScheduler() {
           }
           for (const target of targets) {
             try {
-              await tgBotService.sendMessage(job.userId, String(target), message);
+              if (job.mediaPath) {
+                await tgBotService.sendMediaUrl(job.userId, String(target), job.mediaPath, message);
+              } else if (job.payload?.mediaUrl) {
+                await tgBotService.sendMediaUrl(job.userId, String(target), job.payload.mediaUrl, message);
+              } else {
+                await tgBotService.sendMessage(job.userId, String(target), message);
+              }
               if (throttleMs) await new Promise(r => setTimeout(r, Number(throttleMs)));
             } catch (sendErr) {
               console.log('[Scheduler][TG] send error:', sendErr.message);

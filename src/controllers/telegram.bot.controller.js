@@ -264,7 +264,7 @@ async function getChatContacts(req, res) {
 async function createTelegramCampaign(req, res) {
   try {
     const userId = req.userId;
-    const { targets, message, scheduleAt, throttleMs, timezoneOffset } = req.body || {};
+    const { targets, message, scheduleAt, throttleMs, timezoneOffset, mediaUrl } = req.body || {};
     if (!Array.isArray(targets) || targets.length === 0) {
       return res.status(400).json({ success: false, message: 'targets is required' });
     }
@@ -278,7 +278,11 @@ async function createTelegramCampaign(req, res) {
       let sent = 0;
       for (const t of targets) {
         try {
-          await svc.sendMessage(userId, String(t), String(message));
+          if (mediaUrl) {
+            await svc.sendMediaUrl(userId, String(t), String(mediaUrl), String(message || ''));
+          } else {
+            await svc.sendMessage(userId, String(t), String(message));
+          }
           sent++;
           if (ms) await new Promise(r => setTimeout(r, ms));
         } catch (e) {
@@ -291,7 +295,7 @@ async function createTelegramCampaign(req, res) {
         status: 'completed',
         type: 'campaign',
         scheduledAt: new Date(),
-        payload: { targets, message, throttleMs: Number(throttleMs || 1500) },
+        payload: { targets, message, mediaUrl: mediaUrl || null, throttleMs: Number(throttleMs || 1500) },
         result: `Sent ${sent}/${targets.length}`
       });
       return res.json({ success: true, id: job.id });
@@ -310,7 +314,7 @@ async function createTelegramCampaign(req, res) {
       status: 'pending',
       type: 'campaign',
       scheduledAt: when,
-      payload: { targets, message, throttleMs: Number(throttleMs || 1500) }
+      payload: { targets, message, mediaUrl: mediaUrl || null, throttleMs: Number(throttleMs || 1500) }
     });
     return res.json({ success: true, id: job.id });
   } catch (e) {
@@ -338,8 +342,14 @@ async function listTelegramMonthlySchedules(req, res) {
     const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
     const end = new Date(Date.UTC(year, month, 1, 0, 0, 0));
     const { Op } = require('sequelize');
+    // Only upcoming/pending items within the month window
+    const now = new Date();
     const jobs = await TelegramSchedule.findAll({
-      where: { userId, scheduledAt: { [Op.gte]: start, [Op.lt]: end } },
+      where: { 
+        userId, 
+        scheduledAt: { [Op.gte]: start, [Op.lt]: end, [Op.gte]: now },
+        status: { [Op.in]: ['pending','running'] }
+      },
       order: [['scheduledAt', 'ASC']]
     });
     return res.json({ success: true, month, year, telegram: jobs });
