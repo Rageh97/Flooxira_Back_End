@@ -305,6 +305,30 @@ async function start() {
       } catch (usersAlterErr) {
         console.warn('users table ensure columns step failed:', usersAlterErr?.message || usersAlterErr);
       }
+
+      // Ensure telegram_bot_accounts table exists
+      try {
+        await qi.describeTable('telegram_bot_accounts');
+      } catch (e) {
+        console.log('Creating missing table telegram_bot_accounts');
+        await sequelize.query(
+          'CREATE TABLE IF NOT EXISTS `telegram_bot_accounts` (\n' +
+          '  `id` INT NOT NULL AUTO_INCREMENT,\n' +
+          '  `userId` INT NOT NULL,\n' +
+          '  `botUserId` VARCHAR(255) NULL,\n' +
+          '  `username` VARCHAR(255) NULL,\n' +
+          '  `name` VARCHAR(255) NULL,\n' +
+          '  `token` TEXT NULL,\n' +
+          '  `webhookSecret` VARCHAR(255) NULL,\n' +
+          '  `isActive` TINYINT(1) NOT NULL DEFAULT 1,\n' +
+          '  `lastSyncAt` DATETIME NULL,\n' +
+          '  `createdAt` DATETIME NOT NULL,\n' +
+          '  `updatedAt` DATETIME NOT NULL,\n' +
+          '  PRIMARY KEY (`id`),\n' +
+          '  INDEX `idx_tg_user` (`userId`)\n' +
+          ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;'
+        );
+      }
     }
   } catch (migErr) {
     console.warn('Non-fatal schema migration step failed:', migErr?.message || migErr);
