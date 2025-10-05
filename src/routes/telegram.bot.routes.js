@@ -27,6 +27,7 @@ router.get('/bot-chats', ctrl.getBotChats);
 // Campaigns
 router.post('/campaigns', ctrl.createTelegramCampaign);
 router.get('/campaigns', ctrl.listTelegramCampaigns);
+router.get('/schedules/monthly', ctrl.listTelegramMonthlySchedules);
 
 // Template routes
 router.post('/send-template', ctrl.sendTemplateMessage);

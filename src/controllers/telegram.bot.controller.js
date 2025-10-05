@@ -271,7 +271,33 @@ async function createTelegramCampaign(req, res) {
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ success: false, message: 'message is required' });
     }
-    const when = scheduleAt ? new Date(scheduleAt) : new Date(Date.now() + 5000);
+    // Immediate send if no scheduleAt provided
+    if (!scheduleAt) {
+      const svc = require('../services/telegramBotService');
+      const ms = Number(throttleMs || 1500);
+      let sent = 0;
+      for (const t of targets) {
+        try {
+          await svc.sendMessage(userId, String(t), String(message));
+          sent++;
+          if (ms) await new Promise(r => setTimeout(r, ms));
+        } catch (e) {
+          // continue
+        }
+      }
+      // Record completed schedule for visibility
+      const job = await TelegramSchedule.create({
+        userId,
+        status: 'completed',
+        type: 'campaign',
+        scheduledAt: new Date(),
+        payload: { targets, message, throttleMs: Number(throttleMs || 1500) },
+        result: `Sent ${sent}/${targets.length}`
+      });
+      return res.json({ success: true, id: job.id });
+    }
+
+    const when = new Date(scheduleAt);
     const job = await TelegramSchedule.create({
       userId,
       status: 'pending',
@@ -293,6 +319,25 @@ async function listTelegramCampaigns(req, res) {
     return res.json({ success: true, jobs });
   } catch (e) {
     console.error('[TG-Bot] List campaigns error:', e.message);
+    return res.status(400).json({ success: false, message: e.message });
+  }
+}
+
+async function listTelegramMonthlySchedules(req, res) {
+  try {
+    const userId = req.userId;
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    const year = Number(req.query.year) || (new Date().getFullYear());
+    const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+    const end = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+    const { Op } = require('sequelize');
+    const jobs = await TelegramSchedule.findAll({
+      where: { userId, scheduledAt: { [Op.gte]: start, [Op.lt]: end } },
+      order: [['scheduledAt', 'ASC']]
+    });
+    return res.json({ success: true, month, year, telegram: jobs });
+  } catch (e) {
+    console.error('[TG-Bot] Monthly schedules error:', e.message);
     return res.status(400).json({ success: false, message: e.message });
   }
 }
