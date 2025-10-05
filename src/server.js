@@ -87,9 +87,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Use JSON parser specifically for Telegram webhook to avoid double-reading the stream
+app.use('/api/telegram-bot/webhook/:userId', express.json({ limit: '2mb' }));
+
 // Capture raw body for webhook signature verification (only for non-multipart requests)
 app.use((req, res, next) => {
   const contentType = req.headers['content-type'] || '';
+  // Skip Telegram webhook to avoid consuming the stream before express.json()
+  if (req.url.startsWith('/api/telegram-bot/webhook/')) {
+    return next();
+  }
   
   // Skip body parsing for multipart/form-data (handled by multer)
   if (contentType.includes('multipart/form-data')) {
