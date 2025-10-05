@@ -15,7 +15,7 @@ async function connect(req, res) {
     const proto = forwardedProto || req.protocol || 'http';
     const host = forwardedHost || req.get('host');
     const inferredBase = host ? `${proto}://${host}` : '';
-    const publicBase = baseUrl || process.env.NEXT_PUBLIC_API_URL || inferredBase;
+    const publicBase = baseUrl || process.env.PUBLIC_BASE_URL || inferredBase;
     console.log('[TG-Bot] Using webhook base URL:', publicBase);
 		
 		const info = await tgBot.connectBot(userId, token, publicBase);
