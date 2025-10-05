@@ -13,7 +13,7 @@ async function signUp(req, res) {
   try {
     const { name, email, phone, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: 'Email and password are required' });
-    const existing = await User.findOne({ where: { email } });
+    const existing = await User.findOne({ where: { email }, attributes: ['id'] });
     if (existing) return res.status(409).json({ message: 'Email already in use' });
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({ name, email, phone, passwordHash, role: 'user', isActive: true });
@@ -29,7 +29,7 @@ async function signIn(req, res) {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ message: 'Email and password are required' });
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({ where: { email }, attributes: ['id','name','email','phone','passwordHash','role','isActive'] });
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
     if (!user.isActive) return res.status(403).json({ message: 'Account is deactivated' });
     const ok = await bcrypt.compare(password, user.passwordHash);
@@ -48,7 +48,7 @@ async function me(req, res) {
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
     if (!token) return res.status(401).json({ message: 'Unauthorized' });
     const payload = jwt.verify(token, JWT_SECRET);
-    const user = await User.findByPk(payload.sub);
+    const user = await User.findByPk(payload.sub, { attributes: ['id','name','email','phone','role'] });
     if (!user) return res.status(401).json({ message: 'Unauthorized' });
     return res.json({ user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role } });
   } catch (err) {
