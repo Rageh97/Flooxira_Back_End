@@ -264,7 +264,7 @@ async function getChatContacts(req, res) {
 async function createTelegramCampaign(req, res) {
   try {
     const userId = req.userId;
-    const { targets, message, scheduleAt, throttleMs } = req.body || {};
+    const { targets, message, scheduleAt, throttleMs, timezoneOffset } = req.body || {};
     if (!Array.isArray(targets) || targets.length === 0) {
       return res.status(400).json({ success: false, message: 'targets is required' });
     }
@@ -297,7 +297,12 @@ async function createTelegramCampaign(req, res) {
       return res.json({ success: true, id: job.id });
     }
 
-    const when = new Date(scheduleAt);
+    // Convert scheduleAt to UTC if a timezoneOffset (in minutes) is provided
+    let when = new Date(scheduleAt);
+    if (!isNaN(Number(timezoneOffset))) {
+      const offsetMinutes = Number(timezoneOffset);
+      when = new Date(new Date(scheduleAt).getTime() - offsetMinutes * 60000);
+    }
     const job = await TelegramSchedule.create({
       userId,
       status: 'pending',
@@ -338,6 +343,41 @@ async function listTelegramMonthlySchedules(req, res) {
     return res.json({ success: true, month, year, telegram: jobs });
   } catch (e) {
     console.error('[TG-Bot] Monthly schedules error:', e.message);
+    return res.status(400).json({ success: false, message: e.message });
+  }
+}
+
+async function updateTelegramScheduleController(req, res) {
+  try {
+    const userId = req.userId;
+    const id = Number(req.params.id);
+    const { scheduledAt } = req.body || {};
+    let payload = req.body?.payload;
+    if (typeof payload === 'string') {
+      try { payload = JSON.parse(payload); } catch {}
+    }
+    const job = await TelegramSchedule.findOne({ where: { id, userId } });
+    if (!job) return res.status(404).json({ success: false, message: 'Schedule not found' });
+    if (scheduledAt) job.scheduledAt = new Date(scheduledAt);
+    if (payload) job.payload = payload;
+    await job.save();
+    return res.json({ success: true, schedule: job });
+  } catch (e) {
+    console.error('[TG-Bot] Update schedule error:', e.message);
+    return res.status(400).json({ success: false, message: e.message });
+  }
+}
+
+async function deleteTelegramScheduleController(req, res) {
+  try {
+    const userId = req.userId;
+    const id = Number(req.params.id);
+    const job = await TelegramSchedule.findOne({ where: { id, userId } });
+    if (!job) return res.status(404).json({ success: false, message: 'Schedule not found' });
+    await job.destroy();
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('[TG-Bot] Delete schedule error:', e.message);
     return res.status(400).json({ success: false, message: e.message });
   }
 }

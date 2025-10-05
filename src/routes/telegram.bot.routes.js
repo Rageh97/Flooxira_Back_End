@@ -28,6 +28,8 @@ router.get('/bot-chats', ctrl.getBotChats);
 router.post('/campaigns', ctrl.createTelegramCampaign);
 router.get('/campaigns', ctrl.listTelegramCampaigns);
 router.get('/schedules/monthly', ctrl.listTelegramMonthlySchedules);
+router.put('/schedules/:id', ctrl.updateTelegramScheduleController);
+router.delete('/schedules/:id', ctrl.deleteTelegramScheduleController);
 
 // Template routes
 router.post('/send-template', ctrl.sendTemplateMessage);
