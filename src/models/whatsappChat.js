@@ -32,12 +32,37 @@ const WhatsappChat = sequelize.define('WhatsappChat', {
     type: DataTypes.TEXT,
     allowNull: false
   },
+  contentType: {
+    type: DataTypes.ENUM('text', 'image', 'video', 'audio', 'document'),
+    allowNull: false,
+    defaultValue: 'text'
+  },
+  mediaUrl: {
+    type: DataTypes.STRING(512),
+    allowNull: true
+  },
+  mediaFilename: {
+    type: DataTypes.STRING(255),
+    allowNull: true
+  },
+  mediaMimetype: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
   responseSource: {
-    type: DataTypes.ENUM('knowledge_base', 'openai', 'fallback'),
+    type: DataTypes.ENUM('knowledge_base', 'openai', 'gemini', 'small_talk', 'fallback'),
     allowNull: true
   },
   knowledgeBaseMatch: {
     type: DataTypes.STRING(255),
+    allowNull: true
+  },
+  sessionId: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  context: {
+    type: DataTypes.JSON,
     allowNull: true
   },
   assigneeId: {
@@ -70,6 +95,12 @@ const WhatsappChat = sequelize.define('WhatsappChat', {
     },
     {
       fields: ['assigneeId']
+    },
+    {
+      fields: ['sessionId']
+    },
+    {
+      fields: ['userId', 'contactNumber', 'timestamp']
     }
   ]
 });

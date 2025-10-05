@@ -20,3 +20,9 @@ BotData.belongsTo(User, { foreignKey: 'userId' });
 module.exports = { BotData };
 
 
+
+
+
+
+
+

@@ -7,14 +7,60 @@ const { User } = require('../models/user');
 const { sequelize } = require('../sequelize');
 const Fuse = require('fuse.js');
 const OpenAI = require('openai');
+let GoogleGenerativeAI;
+try { GoogleGenerativeAI = require('@google/generative-ai').GoogleGenerativeAI; } catch (_) { GoogleGenerativeAI = null; }
 const path = require('path');
 const fs = require('fs');
 const xlsx = require('xlsx');
+const { searchOrAnswer } = require('../services/botSearchService');
+const conversationService = require('./conversationService');
+const { WhatsappTemplate, WhatsappTemplateButton } = require('../models/whatsappTemplate');
 
-// OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// OpenAI client (conditional)
+let openai = null;
+try {
+  if (process.env.OPENAI_API_KEY) {
+    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+} catch (_) {
+  openai = null;
+}
+
+// Gemini client (conditional)
+let geminiModel = null;
+try {
+  if (GoogleGenerativeAI && process.env.GOOGLE_API_KEY) {
+    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+    const requested = process.env.GEMINI_MODEL || '';
+    const sdkModelId = (requested && requested.startsWith('models/')) ? requested.split('/').pop() : (requested || 'gemini-2.5-flash');
+    try {
+      geminiModel = genAI.getGenerativeModel({ model: sdkModelId });
+      console.log('[WA] Using Gemini model:', sdkModelId);
+    } catch (_) {
+      geminiModel = null;
+    }
+  }
+} catch (_) {
+  geminiModel = null;
+}
+
+async function callGeminiHTTP(model, prompt) {
+  const fetch = require('node-fetch');
+  const url = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(process.env.GOOGLE_API_KEY)}`;
+  const body = {
+    contents: [
+      { role: 'user', parts: [{ text: prompt }] }
+    ]
+  };
+  const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Gemini HTTP ${resp.status}: ${text}`);
+  }
+  const data = await resp.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return text?.trim();
+}
 
 class WhatsAppService {
   constructor() {
@@ -421,75 +467,191 @@ class WhatsAppService {
 
   async handleIncomingMessage(message, userId) {
     try {
+      // Check if bot is paused for this user
+      const user = await User.findByPk(userId);
+      if (user && user.botPaused) {
+        // Check if pause has expired
+        if (user.botPausedUntil && new Date() > user.botPausedUntil) {
+          // Resume bot
+          await user.update({ botPaused: false, botPausedUntil: null });
+          console.log(`[WA] Bot resumed for user ${userId} - pause expired`);
+        } else {
+          // Bot is still paused, don't respond
+          console.log(`[WA] Bot is paused for user ${userId}, ignoring message from ${message.from}`);
+          return;
+        }
+      }
+      
       // Track message count
       const currentCount = this.messageCounters.get(userId) || 0;
       this.messageCounters.set(userId, currentCount + 1);
       
       console.log(`[WA] Processing message #${currentCount + 1} from ${message.from}: ${message.body}`);
       
-      // Log incoming message
-      await this.logChatMessage(userId, message.from, 'incoming', message.body, null, null);
+      // Save incoming message with conversation context
+      await conversationService.saveMessage(userId, message.from, 'incoming', message.body);
+      
+      // Check for template triggers first
+      const templateResponse = await this.checkTemplateTriggers(userId, message.body, message.from);
+      if (templateResponse === 'TEMPLATE_SENT') {
+        // Template with interactive buttons was sent, no need to send additional message
+        await conversationService.saveMessage(userId, message.from, 'outgoing', 'Interactive template sent', 'template');
+        return;
+      } else if (templateResponse) {
+        // Fallback to old method if interactive buttons failed
+        await this.sendMessage(userId, message.from, templateResponse);
+        await conversationService.saveMessage(userId, message.from, 'outgoing', templateResponse, 'template');
+        return;
+      }
+
+      // Check if message is a button selection (number)
+      const messageBody = message.body.trim();
+      const buttonNumber = parseInt(messageBody);
+      
+      if (!isNaN(buttonNumber) && buttonNumber > 0 && buttonNumber <= 10) {
+        const buttonResponse = await this.handleTemplateButtonSelection(userId, message.from, buttonNumber);
+        if (buttonResponse) {
+          await this.sendMessage(userId, message.from, buttonResponse);
+          await conversationService.saveMessage(userId, message.from, 'outgoing', buttonResponse, 'template');
+          return;
+        }
+      }
       
       let response = '';
       let responseSource = 'fallback';
       let knowledgeBaseMatch = null;
       
-      // Get user's knowledge base
-      const knowledgeEntries = await KnowledgeBase.findAll({
-        where: { userId, isActive: true }
-      });
+      // First, try dynamic BotData search with Fuse.js, then OpenAI fallback inside the service
+      try {
+        console.log(`[WA] BotData search start for user ${userId}...`);
+        const result = await searchOrAnswer(userId, message.body, 0.5, 3, message.from, null);
+        console.log(`[WA] BotData search result source=`, result?.source, ' hasMatches=', Array.isArray(result?.matches) && result.matches.length);
+        if (result?.source === 'fuse' && Array.isArray(result.matches) && result.matches.length) {
+          // Format top match into a comprehensive, organized product details
+          const top = result.matches[0];
+          const data = top.data || {};
+          const name = data['اسم_المنتج'] || data['product_name'] || data['name'] || '';
+          const price = data['السعر'] || data['price'] || '';
+          const category = data['الفئة'] || data['category'] || '';
+          const desc = data['الوصف'] || data['description'] || '';
+          const brand = data['الماركة'] || data['brand'] || '';
+          const warranty = data['الضمان'] || data['warranty'] || '';
+          const stock = data['المخزون'] || data['stock'] || '';
+          
+          let productDetails = '';
+          if (name) productDetails += `📱 المنتج: ${name}\n`;
+          if (price) productDetails += `💰 السعر: ${price} ريال سعودي\n`;
+          if (category) productDetails += `📂 الفئة: ${category}\n`;
+          if (brand) productDetails += `🏷️ الماركة: ${brand}\n`;
+          if (desc) productDetails += `📝 الوصف: ${String(desc).slice(0, 200)}\n`;
+          if (warranty) productDetails += `🛡️ الضمان: ${warranty}\n`;
+          if (stock) productDetails += `📦 المخزون: ${stock}\n`;
+          
+          // Add marketing persuasion for Chance Play
+          productDetails += `\n✨ هذا المنتج مميز جداً ويستحق الشراء!\n🛡️ عندك ضمان كامل وخدمة عملاء ممتازة في شانس بلاي\n🚚 توصيل سريع لجميع أنحاء المملكة\n🎮 شانس بلاي - منصة الألعاب والترفيه الرقمي المفضلة`;
+          
+          response = productDetails;
+          responseSource = 'knowledge_base';
+          knowledgeBaseMatch = name || 'منتج';
+          console.log(`[WA] BotData match used for user ${userId}`);
+        } else if (result?.source === 'direct' && result.answer) {
+          response = result.answer;
+          responseSource = 'knowledge_base';
+          console.log('[WA] Direct intent answer used');
+        } else if (result?.source === 'summary' && result.answer) {
+          response = `أكيد! هذه نظرة سريعة على بعض المنتجات لدينا 👇\n${result.answer}`;
+          responseSource = 'knowledge_base';
+          console.log('[WA] BotData summary used');
+        } else if (result?.source === 'small_talk' && result.answer) {
+          response = result.answer;
+          responseSource = 'small_talk';
+          console.log('[WA] Small talk used');
+        } else if (result?.source === 'openai' && result.answer) {
+          response = result.answer;
+          responseSource = 'openai';
+          console.log('[WA] OpenAI fallback answer used');
+        } else if (result?.source === 'gemini' && result.answer) {
+          response = result.answer;
+          responseSource = 'gemini';
+          console.log('[WA] Gemini fallback answer used');
+        }
+      } catch (e) {
+        console.log('[WA] searchOrAnswer failed, will continue with legacy KB/OpenAI flow');
+      }
 
-      if (knowledgeEntries.length > 0) {
-        // Use fuzzy matching to find best answer
-        const fuse = new Fuse(knowledgeEntries, {
-          keys: ['keyword'],
-          threshold: 0.6,
-          includeScore: true
-        });
-
-        const results = fuse.search(message.body);
-        
+      // If still no response, try legacy knowledge base
+      if (!response) {
+        const knowledgeEntries = await KnowledgeBase.findAll({ where: { userId, isActive: true } });
+        if (knowledgeEntries.length > 0) {
+          const fuse = new Fuse(knowledgeEntries, { keys: ['keyword'], threshold: 0.6, includeScore: true });
+          const results = fuse.search(message.body);
         if (results.length > 0 && results[0].score < 0.6) {
           response = results[0].item.answer;
           responseSource = 'knowledge_base';
           knowledgeBaseMatch = results[0].item.keyword;
-          console.log(`[WA] Found knowledge base match: ${results[0].item.keyword}`);
+            console.log(`[WA] Found legacy knowledge base match: ${results[0].item.keyword}`);
+          }
         }
       }
 
-      // If no knowledge base match, use OpenAI as fallback
+      // If still nothing, final LLM fallback: OpenAI then Gemini
       if (!response) {
         try {
+          if (openai) {
           const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
-              {
-                role: "system",
-                content: "You are a helpful WhatsApp bot assistant. Provide concise, helpful responses to user queries. Keep responses under 160 characters when possible. If you don't know something, politely say you don't have that information."
-              },
-              {
-                role: "user",
-                content: message.body
-              }
+                { role: "system", content: "أنت سلمى، موظفة خدمة العملاء في منصة شانس بلاي المتخصصة في الألعاب والترفيه الرقمي. استخدم اللهجة السعودية العامية فقط. إذا لم تجد المنتج/الخدمة المطلوبة، اعتذر وأخبره أن الخدمة ستتوفر قريباً. إذا اشتكى من السعر، اقنعه بجودة المنتج والضمان وخدمة العملاء المميزة في شانس بلاي. إذا سأل عن كوبون، ابحث في البيانات أولاً. إذا قال 'مستعد' أو 'بدي اشتريها'، قدم رابط الشراء مباشرة. كن مختصراً واحترافياً، لا تكرر الترحيب." },
+                { role: "user", content: message.body }
             ],
             max_tokens: 150
           });
           response = completion.choices[0].message.content;
           responseSource = 'openai';
+          } else if (geminiModel) {
+            const prompt = "أنت سلمى، موظفة خدمة العملاء في منصة شانس بلاي المتخصصة في الألعاب والترفيه الرقمي. استخدم اللهجة السعودية العامية فقط. إذا لم تجد المنتج/الخدمة المطلوبة، اعتذر وأخبره أن الخدمة ستتوفر قريباً. إذا اشتكى من السعر، اقنعه بجودة المنتج والضمان وخدمة العملاء المميزة في شانس بلاي. إذا سأل عن كوبون، ابحث في البيانات أولاً. إذا قال 'مستعد' أو 'بدي اشتريها'، قدم رابط الشراء مباشرة. كن مختصراً واحترافياً، لا تكرر الترحيب.\n\n" + message.body;
+            try {
+              const result = await geminiModel.generateContent(prompt);
+              const text = result?.response?.text?.() || result?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (text) {
+                response = String(text).trim();
+                responseSource = 'gemini';
+              } else if (process.env.GOOGLE_API_KEY) {
+                const httpModel = process.env.GEMINI_MODEL || 'models/gemini-2.5-flash';
+                const httpText = await callGeminiHTTP(httpModel, prompt);
+                if (httpText) {
+                  response = httpText;
+                  responseSource = 'gemini';
+                }
+              }
+            } catch (ge) {
+              console.error('[WA] Gemini error:', ge);
+              if (process.env.GOOGLE_API_KEY) {
+                try {
+                  const httpModel = process.env.GEMINI_MODEL || 'models/gemini-2.5-flash';
+                  const httpText = await callGeminiHTTP(httpModel, prompt);
+                  if (httpText) {
+                    response = httpText;
+                    responseSource = 'gemini';
+                  }
+                } catch (he) {
+                  console.error('[WA] Gemini HTTP error:', he);
+                }
+              }
+            }
+          }
         } catch (openaiError) {
           console.error('OpenAI error:', openaiError);
-          response = "نحن الان في وضع التطوير سستتحسن التجربة قريبا...";
+          // Keep a deterministic Arabic fallback but do not block the pipeline
+          response = "أعتذر، لم أعثر على معلومات كافية حاليًا.";
           responseSource = 'fallback';
         }
       }
 
-      // Final fallback response
+      // Final fallback response (no echo)
       if (!response) {
-        if (message.body && message.body.trim()) {
-          response = `Echo: ${message.body.trim()}`;
-        } else {
-          response = 'Hello! How can I help you today?';
-        }
+        console.warn('[WA] No LLM available or no data match; sending neutral fallback');
+        response = 'أعتذر، لم أستطع توليد إجابة الآن.';
         responseSource = 'fallback';
       }
 
@@ -498,12 +660,171 @@ class WhatsAppService {
         // Delay 3 seconds before replying
         await new Promise(r => setTimeout(r, 3000));
         await this.sendMessage(userId, message.from, response);
-        await this.logChatMessage(userId, message.from, 'outgoing', response, responseSource, knowledgeBaseMatch);
+        await conversationService.saveMessage(userId, message.from, 'outgoing', response, responseSource, knowledgeBaseMatch);
       }
 
     } catch (error) {
       console.error('Message handling error:', error);
     }
+  }
+
+  // Check for template triggers
+  async checkTemplateTriggers(userId, message, contactNumber) {
+    try {
+      const templates = await WhatsappTemplate.findAll({
+        where: { userId, isActive: true },
+        include: [
+          {
+            model: WhatsappTemplateButton,
+            as: 'buttons',
+            where: { parentButtonId: null, isActive: true },
+            required: false
+          }
+        ],
+        order: [['displayOrder', 'ASC']]
+      });
+
+      for (const template of templates) {
+        // Check trigger keywords
+        if (template.triggerKeywords && template.triggerKeywords.length > 0) {
+          const messageLower = message.toLowerCase();
+          const hasTrigger = template.triggerKeywords.some(keyword => 
+            messageLower.includes(keyword.toLowerCase())
+          );
+          
+          if (hasTrigger) {
+            // Send template with buttons
+            const sent = await this.sendTemplateWithButtons(userId, contactNumber, template);
+            if (sent) {
+              return 'TEMPLATE_SENT'; // Special flag to indicate template was sent
+            }
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Template trigger check error:', error);
+      return null;
+    }
+  }
+
+  // Format template message with interactive buttons
+  formatTemplateMessage(template) {
+    let message = '';
+    
+    if (template.headerText) {
+      message += template.headerText + '\n\n';
+    }
+
+    if (template.footerText) {
+      message += template.footerText;
+    }
+
+    return message;
+  }
+
+  // Send template with interactive buttons
+  async sendTemplateWithButtons(userId, contactNumber, template) {
+    try {
+      const client = this.userClients.get(userId);
+      if (!client) {
+        console.error(`[WA] No client found for user ${userId}`);
+        return false;
+      }
+
+      const chatId = contactNumber.endsWith('@c.us') ? contactNumber : `${contactNumber}@c.us`;
+      
+      // Format the message text with buttons
+      let messageText = this.formatTemplateMessage(template);
+      
+      // Add buttons as clickable text
+      if (template.buttons && template.buttons.length > 0) {
+        messageText += '\n\n📋 *اختر من القائمة التالية:*\n';
+        
+        template.buttons.forEach((button, index) => {
+          messageText += `\n${index + 1}. ${button.buttonText}`;
+        });
+        
+        messageText += '\n\n💡 *اضغط على رقم الخيار المطلوب*';
+      }
+
+      // Send the message
+      await client.sendMessage(chatId, messageText);
+      
+      console.log(`[WA] Sent template with ${template.buttons?.length || 0} buttons to ${contactNumber}`);
+      return true;
+    } catch (error) {
+      console.error('[WA] Error sending template with buttons:', error);
+      return false;
+    }
+  }
+
+  // Handle template button selection
+  async handleTemplateButtonSelection(userId, contactNumber, buttonNumber) {
+    try {
+      const templates = await WhatsappTemplate.findAll({
+        where: { userId, isActive: true },
+        include: [
+          {
+            model: WhatsappTemplateButton,
+            as: 'buttons',
+            where: { parentButtonId: null, isActive: true },
+            required: false
+          }
+        ],
+        order: [['displayOrder', 'ASC']]
+      });
+
+      for (const template of templates) {
+        if (template.buttons && template.buttons.length >= buttonNumber) {
+          const selectedButton = template.buttons[buttonNumber - 1];
+          return await this.processButtonAction(selectedButton, template);
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Template button selection error:', error);
+      return null;
+    }
+  }
+
+  // Process button action
+  async processButtonAction(button, template) {
+    switch (button.buttonType) {
+      case 'reply':
+        return button.responseText || 'تم استلام طلبك، سنتواصل معك قريباً.';
+      
+      case 'url':
+        return `🔗 ${button.buttonText}\n\n${button.url}`;
+      
+      case 'phone':
+        return `📞 ${button.buttonText}\n\n${button.phoneNumber}`;
+      
+      case 'nested':
+        return this.formatNestedButtons(button, template);
+      
+      default:
+        return button.responseText || 'شكراً لك!';
+    }
+  }
+
+  // Format nested buttons
+  formatNestedButtons(button, template) {
+    let message = button.buttonText + '\n\n';
+    
+    if (button.ChildButtons && button.ChildButtons.length > 0) {
+      message += 'اختر من القائمة الفرعية:\n\n';
+      
+      button.ChildButtons.forEach((childButton, index) => {
+        message += `${index + 1}. ${childButton.buttonText}\n`;
+      });
+      
+      message += '\nأرسل رقم الخيار المطلوب.';
+    }
+
+    return message;
   }
 
   async logChatMessage(userId, contactNumber, messageType, messageContent, responseSource, knowledgeBaseMatch) {
@@ -674,6 +995,10 @@ class WhatsAppService {
           contactNumber: chat.contactNumber,
           messageType: chat.messageType,
           messageContent: chat.messageContent,
+          contentType: chat.contentType || 'text',
+          mediaUrl: chat.mediaUrl,
+          mediaFilename: chat.mediaFilename,
+          mediaMimetype: chat.mediaMimetype,
           responseSource: chat.responseSource,
           knowledgeBaseMatch: chat.knowledgeBaseMatch,
           timestamp: chat.timestamp
@@ -915,6 +1240,76 @@ class WhatsAppService {
       return { success: true, summary: { sent, failed, total: rows.length } };
     } catch (e) {
       return { success: false, message: 'Campaign failed', error: e.message };
+    }
+  }
+
+  // Send media message to a specific contact
+  async sendMediaTo(userId, to, buffer, filename, mimetype, caption = '') {
+    try {
+      const client = this.userClients.get(userId);
+      if (!client) return false;
+      const raw = String(to || '').replace(/\D/g, '');
+      if (!raw) return false;
+      const chatId = raw.endsWith('@c.us') ? raw : `${raw}@c.us`;
+
+      const base64 = buffer.toString('base64');
+      let mimeType = mimetype || 'application/octet-stream';
+      if (filename) {
+        const ext = String(filename).toLowerCase().split('.').pop();
+        if (['jpg', 'jpeg'].includes(ext)) mimeType = 'image/jpeg';
+        else if (ext === 'png') mimeType = 'image/png';
+        else if (ext === 'gif') mimeType = 'image/gif';
+        else if (ext === 'webp') mimeType = 'image/webp';
+        else if (['mp4', 'mov', 'm4v'].includes(ext)) mimeType = 'video/mp4';
+      }
+      const media = new MessageMedia(mimeType, base64, filename || 'file');
+      await client.sendMessage(chatId, media, { caption: caption || '' });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Pause bot for a specific user
+  async pauseBotForUser(userId, minutes = 30) {
+    try {
+      const user = await User.findByPk(userId);
+      if (user) {
+        const pauseUntil = new Date();
+        pauseUntil.setMinutes(pauseUntil.getMinutes() + minutes);
+        
+        await user.update({
+          botPaused: true,
+          botPausedUntil: pauseUntil
+        });
+        
+        console.log(`[WA] Bot paused for user ${userId} until ${pauseUntil.toISOString()}`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error(`[WA] Failed to pause bot for user ${userId}:`, error);
+      return false;
+    }
+  }
+
+  // Resume bot for a specific user
+  async resumeBotForUser(userId) {
+    try {
+      const user = await User.findByPk(userId);
+      if (user) {
+        await user.update({
+          botPaused: false,
+          botPausedUntil: null
+        });
+        
+        console.log(`[WA] Bot resumed for user ${userId}`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error(`[WA] Failed to resume bot for user ${userId}:`, error);
+      return false;
     }
   }
 }

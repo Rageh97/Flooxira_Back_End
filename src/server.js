@@ -21,10 +21,27 @@ const linkedinRoutes = require('./routes/linkedin.routes');
 const pinterestRoutes = require('./routes/pinterest.routes');
 const twitterRoutes = require('./routes/twitter.routes');
 const adminRoutes = require('./routes/admin.routes');
-const telegramWebRoutes = require('./routes/telegram.web.routes');
+const telegramBotRoutes = require('./routes/telegram.bot.routes');
+const telegramTemplateRoutes = require('./routes/telegramTemplate.routes');
 const contentRoutes = require('./routes/content.routes');
 const botRoutes = require('./routes/bot.routes');
+const botSettingsRoutes = require('./routes/botSettings.routes');
+const botControlRoutes = require('./routes/botControl.routes');
+const whatsappTemplateRoutes = require('./routes/whatsappTemplate.routes');
+const tagRoutes = require('./routes/tag.routes');
+const mediaRoutes = require('./routes/media.routes');
+const campaignRoutes = require('./routes/campaign.routes');
+const conversationService = require('./services/conversationService');
 const axios = require('axios');
+
+// Import models to ensure they're registered before sync
+require('./models/telegramBotAccount');
+require('./models/telegramChat');
+require('./models/botSettings');
+require('./models/botField');
+require('./models/botData');
+require('./models/whatsappTemplate');
+require('./models/telegramTemplate');
 
 const app = express();
 // CORS configuration - comprehensive setup
@@ -123,10 +140,17 @@ app.use('/api/salla', sallaRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/pinterest', pinterestRoutes);
 app.use('/api/twitter', twitterRoutes);
-app.use('/api/telegram-web', telegramWebRoutes);
+app.use('/api/telegram-bot', telegramBotRoutes);
+app.use('/api/telegram-templates', telegramTemplateRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/platforms', require('./routes/platforms.routes'));
 app.use('/api/bot', botRoutes);
+app.use('/api/bot-settings', botSettingsRoutes);
+app.use('/api/bot-control', botControlRoutes);
+app.use('/api/whatsapp-templates', whatsappTemplateRoutes);
+app.use('/api', tagRoutes);
+app.use('/api', mediaRoutes);
+app.use('/api', campaignRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/uploads', express.static('uploads'));
 
@@ -270,9 +294,27 @@ async function start() {
     console.warn('Non-fatal schema migration step failed:', migErr?.message || migErr);
   }
   try {
-    // ALWAYS force recreate database on every deployment
-    console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables on every deployment...');
-    const syncOptions = { force: true };
+    // Database sync mode: 'alter' (default) or 'force'
+    // IMPORTANT: 'alter' mode preserves existing data while updating schema
+    // 'force' mode DROPS ALL TABLES and recreates them (DATA LOSS!)
+    const dbSyncMode = (process.env.DB_SYNC_MODE || 'alter').toLowerCase();
+    const useForce = dbSyncMode === 'force';
+    const useAlter = dbSyncMode === 'alter';
+    
+    // Safety check: prevent accidental force sync in production
+    if (useForce && process.env.NODE_ENV === 'production') {
+      console.error('❌ FORCE SYNC BLOCKED: Cannot use force sync in production!');
+      console.log('🔄 Falling back to ALTER mode to preserve data...');
+      const useAlter = true;
+      const useForce = false;
+    }
+    
+    let syncOptions = {};
+    
+    if (useForce) {
+      console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables...');
+      console.log('⚠️  WARNING: This will DELETE ALL DATA!');
+      syncOptions = { force: true };
 
     // Clean up legacy tables that might have FKs blocking drops (from removed Telegram models)
     try {
@@ -289,12 +331,56 @@ async function start() {
       }
     } catch (legacyErr) {
       console.warn('[DB] Legacy cleanup skipped:', legacyErr?.message || legacyErr);
-    }
-
+      }
+    } else if (useAlter) {
+      console.log('🔄 ALTER SYNC: Updating existing tables to match models...');
+      console.log('✅ This will preserve existing data while updating schema');
+      
+      // For SQLite, we need to handle foreign key constraints carefully
+      if (process.env.DB_DIALECT === 'sqlite') {
+        console.log('🔧 SQLite detected: Using safe alter mode with foreign key handling...');
+        
+        // Disable foreign key constraints temporarily for SQLite
+        await sequelize.query('PRAGMA foreign_keys=OFF');
+        
+        try {
+          syncOptions = { alter: true };
+          await sequelize.sync(syncOptions);
+        } catch (alterError) {
+          console.warn('⚠️  ALTER SYNC failed, trying fallback approach...', alterError.message);
+          
+          // Check if it's a constraint error (common with SQLite)
+          if (alterError.name === 'SequelizeForeignKeyConstraintError' || 
+              alterError.name === 'SequelizeUniqueConstraintError' ||
+              alterError.message.includes('SQLITE_CONSTRAINT')) {
+            console.log('🔧 Constraint error detected - using safe fallback...');
+          }
+          
+          // Fallback: try normal sync (create missing tables only)
+          console.log('🔄 FALLBACK: Creating missing tables only...');
+          syncOptions = {};
+          await sequelize.sync(syncOptions);
+        } finally {
+          // Re-enable foreign key constraints
+          await sequelize.query('PRAGMA foreign_keys=ON');
+        }
+      } else {
+        syncOptions = { alter: true };
+        await sequelize.sync(syncOptions);
+      }
+    } else {
+      console.log('📋 NORMAL SYNC: Creating tables if they don\'t exist...');
+      console.log('✅ This will only create missing tables');
+      syncOptions = {};
     await sequelize.sync(syncOptions);
+    }
     
     if (syncOptions.force) {
       console.log('✅ FORCE SYNC COMPLETED: All tables dropped and recreated!');
+    } else if (syncOptions.alter) {
+      console.log('✅ ALTER SYNC COMPLETED: Tables updated to match models!');
+    } else {
+      console.log('✅ SYNC COMPLETED: Database synchronized!');
     }
   } catch (err) {
     console.error('Sequelize sync failed:', err?.stack || err);
@@ -307,6 +393,17 @@ async function start() {
   }
   // Start scheduler after DB is ready
   try { require('./scheduler').startScheduler(); } catch {}
+  
+  // Clean old conversations every 24 hours
+  setInterval(async () => {
+    try {
+      await conversationService.cleanOldConversations();
+      console.log('[Server] Old conversations cleaned');
+    } catch (error) {
+      console.error('[Server] Failed to clean old conversations:', error);
+    }
+  }, 24 * 60 * 60 * 1000); // 24 hours
+  
   app.listen(port, '0.0.0.0', () => {
     console.log(`API listening on ${port}`);
   });

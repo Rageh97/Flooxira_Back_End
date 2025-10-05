@@ -22,3 +22,9 @@ BotField.belongsTo(User, { foreignKey: 'userId' });
 module.exports = { BotField };
 
 
+
+
+
+
+
+

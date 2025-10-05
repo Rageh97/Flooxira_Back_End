@@ -10,6 +10,8 @@ const User = sequelize.define('User', {
   emailVerifiedAt: { type: DataTypes.DATE, allowNull: true },
   role: { type: DataTypes.ENUM('user', 'admin'), allowNull: false, defaultValue: 'user' },
   isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+  botPaused: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  botPausedUntil: { type: DataTypes.DATE, allowNull: true },
 }, {
   tableName: 'users',
   timestamps: true,

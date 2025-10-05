@@ -3,14 +3,26 @@ const { BotData } = require('../models/botData');
 const { Op } = require('sequelize');
 const XLSX = require('xlsx');
 
-function sanitizeFieldName(name) {
+function sanitizeFieldName(name, index) {
+  // If name is empty or undefined, create a descriptive name
+  if (!name || name.trim() === '' || name === '__EMPTY') {
+    return `column_${index + 1}`;
+  }
+  
   // Preserve Unicode letters/numbers (e.g., Arabic), collapse spaces to underscore
   // Remove characters that are not letters, numbers, or underscore
-  return String(name || '')
+  const sanitized = String(name)
     .trim()
     .replace(/\s+/g, '_')
     .replace(/[^\p{L}\p{N}_]/gu, '')
-    .slice(0, 120) || 'field';
+    .slice(0, 120);
+  
+  // If the result is empty or just underscores, use a default name
+  if (!sanitized || sanitized === '_' || sanitized === '__') {
+    return `column_${index + 1}`;
+  }
+  
+  return sanitized;
 }
 
 function inferType(value) {
@@ -29,7 +41,7 @@ async function addField(req, res) {
   try {
     const userId = req.userId;
     const { fieldName, fieldType } = req.body || {};
-    const name = sanitizeFieldName(fieldName);
+    const name = sanitizeFieldName(fieldName, 0);
     if (!name) return res.status(400).json({ message: 'fieldName required' });
     const type = ['string','number','boolean','date','text'].includes(fieldType) ? fieldType : 'string';
     const field = await BotField.create({ userId, fieldName: name, fieldType: type });
@@ -46,6 +58,20 @@ async function listFields(req, res) {
   const userId = req.userId;
   const fields = await BotField.findAll({ where: { userId }, order: [['createdAt', 'ASC']] });
   return res.json({ fields });
+}
+
+async function deleteField(req, res) {
+  try {
+    const userId = req.userId;
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Invalid id' });
+    const field = await BotField.findOne({ where: { id, userId } });
+    if (!field) return res.status(404).json({ message: 'Not found' });
+    await field.destroy();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ message: e?.message || 'Failed to delete field' });
+  }
 }
 
 async function saveData(req, res) {
@@ -66,6 +92,22 @@ async function listData(req, res) {
   const offset = Math.max(Number(req.query.offset) || 0, 0);
   const { rows, count } = await BotData.findAndCountAll({ where: { userId }, order: [['createdAt','DESC']], limit, offset });
   return res.json({ rows, count, limit, offset });
+}
+
+async function updateData(req, res) {
+  try {
+    const userId = req.userId;
+    const id = Number(req.params.id);
+    const { data } = req.body || {};
+    if (!id || !data || typeof data !== 'object') return res.status(400).json({ message: 'id and data required' });
+    const row = await BotData.findOne({ where: { id, userId } });
+    if (!row) return res.status(404).json({ message: 'Not found' });
+    row.data = data;
+    await row.save();
+    return res.json({ row });
+  } catch (e) {
+    return res.status(500).json({ message: e?.message || 'Failed to update row' });
+  }
 }
 
 async function deleteData(req, res) {
@@ -91,37 +133,75 @@ async function uploadExcel(req, res) {
     const sheetName = wb.SheetNames[0];
     const ws = wb.Sheets[sheetName];
     const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    console.log('Excel data sample:', json.slice(0, 2));
+    console.log('All columns:', Object.keys(json[0] || {}));
 
-    // collect fields
+    // collect fields - use original column names with better sanitization
     const fieldNames = new Set();
+    const columnMapping = {};
+    
+    // Get all unique column names from all rows
+    const allColumns = new Set();
     for (const row of json) {
-      Object.keys(row).forEach((k) => fieldNames.add(sanitizeFieldName(k)));
+      Object.keys(row).forEach(k => allColumns.add(k));
     }
+    
+    console.log('All columns found:', Array.from(allColumns));
+    
+    // Create mapping for each column
+    Array.from(allColumns).forEach((k, index) => {
+      let sanitized;
+      if (k === 'بيانات_المنتج') {
+        sanitized = 'product_data';
+      } else if (k.startsWith('__EMPTY')) {
+        // For __EMPTY columns, create descriptive names
+        const emptyIndex = k.replace('__EMPTY', '').replace('_', '');
+        const emptyNum = emptyIndex ? parseInt(emptyIndex) : 0;
+        sanitized = `column_${emptyNum + 2}`;
+      } else {
+        sanitized = sanitizeFieldName(k, index);
+      }
+      
+      columnMapping[k] = sanitized;
+      fieldNames.add(sanitized);
+      console.log(`Column mapping: "${k}" -> "${sanitized}"`);
+    });
+    console.log('Final field names:', Array.from(fieldNames));
+    
     const existing = await BotField.findAll({ where: { userId } });
     const existingNames = new Set(existing.map((f) => f.fieldName));
+    console.log('Existing field names:', Array.from(existingNames));
+    
     const toCreate = [];
     for (const fname of fieldNames) {
       if (!existingNames.has(fname)) {
         // infer type from first non-empty value
         let inferred = 'string';
         for (const r of json) {
-          const val = r[fname] ?? r[Object.keys(r).find((k) => sanitizeFieldName(k) === fname) || ''];
+          // Find the original key that matches the sanitized field name
+          const originalKey = Object.keys(r).find((k) => columnMapping[k] === fname);
+          const val = originalKey ? r[originalKey] : undefined;
           if (val !== '' && typeof val !== 'undefined') {
             inferred = inferType(val);
             break;
           }
         }
         toCreate.push({ userId, fieldName: fname, fieldType: inferred });
+        console.log(`Creating field: ${fname} (${inferred})`);
+      } else {
+        console.log(`Field already exists: ${fname}`);
       }
     }
+    console.log('Fields to create:', toCreate.length);
     if (toCreate.length) await BotField.bulkCreate(toCreate, { ignoreDuplicates: true });
 
     // Save rows
     const normalizedRows = json.map((r) => {
       const data = {};
       for (const [k, v] of Object.entries(r)) {
-        data[sanitizeFieldName(k)] = v;
+        data[columnMapping[k]] = v;
       }
+      console.log('Normalized row data:', data);
       return { userId, data };
     });
     if (normalizedRows.length) await BotData.bulkCreate(normalizedRows);
@@ -139,6 +219,4 @@ async function uploadExcel(req, res) {
   }
 }
 
-module.exports = { addField, listFields, saveData, listData, deleteData, uploadExcel };
-
-
+module.exports = { addField, listFields, deleteField, saveData, listData, updateData, deleteData, uploadExcel };

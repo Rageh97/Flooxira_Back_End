@@ -12,10 +12,15 @@ const { Post } = require('../models/post');
 const { sequelize } = require('../sequelize');
 const { Op } = require('sequelize');
 
-// OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// OpenAI client (conditional)
+let openai = null;
+try {
+  if (process.env.OPENAI_API_KEY) {
+    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+} catch (_) {
+  openai = null;
+}
 
 // Global error handler for unhandled rejections (file locking issues)
 // Remove all existing handlers first to prevent duplicates
