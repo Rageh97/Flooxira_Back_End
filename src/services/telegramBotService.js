@@ -971,6 +971,15 @@ class TelegramBotService {
 				text: button.text
 			};
 
+			// Optional color hint via emoji prefix for visual grouping
+			if (button.color) {
+				const color = String(button.color).toLowerCase();
+				const colorEmoji = color.includes('red') ? '🔴' : color.includes('green') ? '🟢' : color.includes('blue') ? '🔵' : color.includes('yellow') ? '🟡' : color.includes('purple') ? '🟣' : color.includes('orange') ? '🟠' : '';
+				if (colorEmoji) {
+					buttonData.text = `${colorEmoji} ${buttonData.text}`;
+				}
+			}
+
 			switch (button.buttonType) {
 				case 'url':
 					buttonData.url = button.url;
@@ -1154,59 +1163,36 @@ class TelegramBotService {
 				timestamp: new Date()
 			});
 
-			// Check for template triggers
-			if (messageText.trim()) {
-				const matchingTemplate = await this.findMatchingTemplate(userId, messageText);
-				
-				if (matchingTemplate) {
-					console.log('[TG-Bot] Found matching template:', matchingTemplate.name);
-					
-					try {
-						const bot = await this.getActiveBot(userId);
-						if (bot && bot.token) {
-							const result = await this.sendTemplateMessage(bot.token, chatId, matchingTemplate);
-							
-							// Log template usage
-							await this.logTemplateUsage(
-								matchingTemplate.id,
-								userId,
-								chatId,
-								result.result?.message_id,
-								{},
-								true,
-								null
-							);
+			// Auto-reply: if enabled, send a specific template regardless of keyword
+			const { BotSettings } = require('../models/botSettings');
+			let autoTemplate = null;
+			try {
+				const settings = await BotSettings.findOne({ where: { userId } });
+				if (settings?.autoReplyEnabled && settings?.autoReplyTemplateId) {
+					autoTemplate = await TelegramTemplate.findOne({ where: { id: settings.autoReplyTemplateId, userId, isActive: true }, include: [{ model: TelegramTemplateButton, as: 'buttons', where: { parentButtonId: null }, required: false }] });
+				}
+			} catch {}
 
-							// Save outgoing message to chat history
-							await TelegramChat.create({
-								userId,
-								chatId,
-								chatType: message.chat.type,
-								chatTitle: message.chat.title || message.from?.first_name || 'Unknown',
-								messageType: 'outgoing',
-								messageContent: matchingTemplate.bodyText,
-								responseSource: 'template',
-								knowledgeBaseMatch: matchingTemplate.name,
-								timestamp: new Date()
-							});
+			let matchingTemplate = null;
+			if (autoTemplate) {
+				matchingTemplate = autoTemplate;
+			} else if (messageText.trim()) {
+				matchingTemplate = await this.findMatchingTemplate(userId, messageText);
+			}
 
-							console.log('[TG-Bot] Template sent successfully');
-							return;
-						}
-					} catch (error) {
-						console.error('[TG-Bot] Error sending template:', error);
-						
-						// Log failed template usage
-						await this.logTemplateUsage(
-							matchingTemplate.id,
-							userId,
-							chatId,
-							null,
-							{},
-							false,
-							error.message
-						);
+			if (matchingTemplate) {
+				console.log('[TG-Bot] Using template:', matchingTemplate.name);
+				try {
+					const bot = await this.getActiveBot(userId);
+					if (bot && bot.token) {
+						const result = await this.sendTemplateMessage(bot.token, chatId, matchingTemplate);
+						await this.logTemplateUsage(matchingTemplate.id, userId, chatId, result.result?.message_id, {}, true, null);
+						await TelegramChat.create({ userId, chatId, chatType: message.chat.type, chatTitle: message.chat.title || message.from?.first_name || 'Unknown', messageType: 'outgoing', messageContent: matchingTemplate.bodyText, responseSource: 'template', knowledgeBaseMatch: matchingTemplate.name, timestamp: new Date() });
+						return;
 					}
+				} catch (error) {
+					console.error('[TG-Bot] Error sending template:', error);
+					await this.logTemplateUsage(matchingTemplate.id, userId, chatId, null, {}, false, error.message);
 				}
 			}
 

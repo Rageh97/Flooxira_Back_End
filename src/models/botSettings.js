@@ -7,6 +7,25 @@ const BotSettings = sequelize.define('BotSettings', {
     primaryKey: true,
     autoIncrement: true
   },
+  // Auto-reply Template Settings
+  autoReplyEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  autoReplyTemplateId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'telegram_templates',
+      key: 'id'
+    }
+  },
+  // UI Preference: default button color for new buttons (optional)
+  buttonColorDefault: {
+    type: DataTypes.STRING(16),
+    allowNull: true
+  },
   userId: {
     type: DataTypes.INTEGER,
     allowNull: false,
