@@ -1,6 +1,7 @@
 const tgBot = require('../services/telegramBotService');
 const TelegramBotAccount = require('../models/telegramBotAccount');
 const TelegramChat = require('../models/telegramChat');
+const { TelegramSchedule } = require('../models/telegramSchedule');
 
 async function connect(req, res) {
 	try {
@@ -259,6 +260,43 @@ async function getChatContacts(req, res) {
 	}
 }
 
+// Campaigns
+async function createTelegramCampaign(req, res) {
+  try {
+    const userId = req.userId;
+    const { targets, message, scheduleAt, throttleMs } = req.body || {};
+    if (!Array.isArray(targets) || targets.length === 0) {
+      return res.status(400).json({ success: false, message: 'targets is required' });
+    }
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ success: false, message: 'message is required' });
+    }
+    const when = scheduleAt ? new Date(scheduleAt) : new Date(Date.now() + 5000);
+    const job = await TelegramSchedule.create({
+      userId,
+      status: 'pending',
+      type: 'campaign',
+      scheduledAt: when,
+      payload: { targets, message, throttleMs: Number(throttleMs || 1500) }
+    });
+    return res.json({ success: true, id: job.id });
+  } catch (e) {
+    console.error('[TG-Bot] Create campaign error:', e.message);
+    return res.status(400).json({ success: false, message: e.message });
+  }
+}
+
+async function listTelegramCampaigns(req, res) {
+  try {
+    const userId = req.userId;
+    const jobs = await TelegramSchedule.findAll({ where: { userId }, order: [['createdAt', 'DESC']], limit: 50 });
+    return res.json({ success: true, jobs });
+  } catch (e) {
+    console.error('[TG-Bot] List campaigns error:', e.message);
+    return res.status(400).json({ success: false, message: e.message });
+  }
+}
+
 async function exportMembers(req, res) {
 	try {
 		const userId = req.userId;
@@ -468,8 +506,9 @@ async function testTemplateMatching(req, res) {
 }
 
 module.exports = { 
-	connect, webhook, info, testBot, sendMessage, getChat, getChatAdmins, promoteMember, 
+  connect, webhook, info, testBot, getChat, getChatAdmins, promoteMember, 
 	getUpdates, getChatHistory, getChatStats, getChatContacts, exportMembers, getChatMembersInfo, getBotChats,
-	sendTemplateMessage, getActiveTemplates, findMatchingTemplate, testTemplateMatching
+  sendTemplateMessage, getActiveTemplates, findMatchingTemplate, testTemplateMatching,
+  createTelegramCampaign, listTelegramCampaigns
 };
 

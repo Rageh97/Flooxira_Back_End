@@ -660,8 +660,9 @@ class TelegramBotService {
 			const updatesUrl = `https://api.telegram.org/bot${encodeURIComponent(bot.token)}/getUpdates`;
 			const updatesResp = await axios.post(updatesUrl, { 
 				limit: 100,
-				timeout: 30 
-			}, { timeout: 15000 });
+				allowed_updates: ['message','my_chat_member','chat_member','channel_post','edited_message','edited_channel_post'],
+				timeout: 10 
+			}, { timeout: 20000 });
 			
 			if (!updatesResp.data?.ok) {
 				throw new Error(updatesResp.data?.description || 'Failed to get updates');
@@ -765,7 +766,7 @@ class TelegramBotService {
 				success: true,
 				chats: chats,
 				total: chats.length,
-				note: 'Chats are discovered from recent bot activity. Make sure your bot has been active in groups/channels to see them here.'
+				note: 'Chats discovered via recent updates and chat introspection. Ensure the bot is active in the groups/channels and has necessary rights.'
 			};
 			
 		} catch (err) {

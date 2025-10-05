@@ -9,6 +9,8 @@ const TikTokAccount = require('./models/tiktokAccount');
 const YouTubeAccount = require('./models/youtubeAccount');
 const { WhatsappSchedule } = require('./models/whatsappSchedule');
 const whatsappService = require('./services/whatsappService');
+const tgBotService = require('./services/telegramBotService');
+const { TelegramSchedule } = require('./models/telegramSchedule');
 
 async function tryPublishNow(post) {
   console.log('Attempting to publish post:', {
@@ -1278,6 +1280,38 @@ function startScheduler() {
         console.log(`[Scheduler] Cleanup error: ${cleanupError.message}`);
       }
     } catch {}
+
+    // Telegram due schedules
+    try {
+      const tgDue = await TelegramSchedule.findAll({ where: { status: 'pending', scheduledAt: { [Op.lte]: now } }, limit: 50 });
+      for (const job of tgDue) {
+        try {
+          job.status = 'running';
+          await job.save();
+          const { targets, message, throttleMs } = job.payload || {};
+          if (!Array.isArray(targets) || !message) {
+            throw new Error('Invalid campaign payload');
+          }
+          for (const target of targets) {
+            try {
+              await tgBotService.sendMessage(job.userId, String(target), message);
+              if (throttleMs) await new Promise(r => setTimeout(r, Number(throttleMs)));
+            } catch (sendErr) {
+              console.log('[Scheduler][TG] send error:', sendErr.message);
+            }
+          }
+          job.status = 'completed';
+          job.result = `Sent to ${targets.length} targets`;
+          await job.save();
+        } catch (e) {
+          job.status = 'failed';
+          job.result = String(e?.message || e);
+          await job.save();
+        }
+      }
+    } catch (e) {
+      console.log('[Scheduler][TG] error:', e.message);
+    }
   });
 }
 

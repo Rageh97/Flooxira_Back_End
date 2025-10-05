@@ -12,7 +12,7 @@ router.use(requireAuth);
 router.post('/connect', ctrl.connect);
 router.get('/info', ctrl.info);
 router.get('/test', ctrl.testBot);
-router.post('/send', ctrl.sendMessage);
+// Removed legacy send endpoint
 router.get('/chat/:chatId', ctrl.getChat);
 router.get('/chat/:chatId/admins', ctrl.getChatAdmins);
 router.post('/promote', ctrl.promoteMember);
@@ -23,6 +23,10 @@ router.get('/contacts', ctrl.getChatContacts);
 router.get('/chat/:chatId/members', ctrl.getChatMembersInfo);
 router.get('/chat/:chatId/export', ctrl.exportMembers);
 router.get('/bot-chats', ctrl.getBotChats);
+
+// Campaigns
+router.post('/campaigns', ctrl.createTelegramCampaign);
+router.get('/campaigns', ctrl.listTelegramCampaigns);
 
 // Template routes
 router.post('/send-template', ctrl.sendTemplateMessage);
