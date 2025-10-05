@@ -301,7 +301,9 @@ async function createTelegramCampaign(req, res) {
     let when = new Date(scheduleAt);
     if (!isNaN(Number(timezoneOffset))) {
       const offsetMinutes = Number(timezoneOffset);
-      when = new Date(new Date(scheduleAt).getTime() - offsetMinutes * 60000);
+      // Date.getTimezoneOffset() is minutes to add to local to get UTC
+      // So UTC = local + offsetMinutes
+      when = new Date(new Date(scheduleAt).getTime() + offsetMinutes * 60000);
     }
     const job = await TelegramSchedule.create({
       userId,
