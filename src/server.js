@@ -278,7 +278,15 @@ async function start() {
 
     console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables...');
     console.log('⚠️  WARNING: This will DELETE ALL DATA on each deploy.');
+    const isMySQL = (process.env.DB_DIALECT || '').toLowerCase() === 'mysql';
+    if (isMySQL) {
+      // Temporarily disable FK checks to avoid creation order issues
+      await sequelize.query('SET FOREIGN_KEY_CHECKS=0');
+    }
     await sequelize.sync({ force: true });
+    if (isMySQL) {
+      await sequelize.query('SET FOREIGN_KEY_CHECKS=1');
+    }
     console.log('✅ Database schema synchronized (all tables recreated).');
   } catch (error) {
     if (
