@@ -170,15 +170,67 @@ class TelegramBotService {
 		const data = String(callbackQuery.data || '').trim();
 		const message = callbackQuery.message;
 		const chatId = message?.chat?.id;
+		const messageId = message?.message_id;
 
 		// Acknowledge the button press quickly
 		try { await this.answerCallbackQuery(bot.token, callbackQuery.id); } catch {}
 
-		if (!chatId) return;
+		if (!chatId || !messageId) return;
 
-		// Echo or map the callback data to a response. For now, just send the data.
-		const responseText = data ? `Selected: ${data}` : 'Button pressed';
-		await this.sendMessage(userId, String(chatId), responseText);
+		try {
+			// Open submenu for a specific button
+			if (/^btn:\d+$/.test(data)) {
+				const buttonId = Number(data.split(':')[1]);
+				const button = await TelegramTemplateButton.findByPk(buttonId, { include: [{ model: TelegramTemplateButton, as: 'ChildButtons' }] });
+				if (!button) return;
+
+				if (Array.isArray(button.ChildButtons) && button.ChildButtons.length > 0) {
+					const rows = this.buildInlineKeyboard(button.ChildButtons, 2, true);
+					rows.push([{ text: '⬅️ رجوع', callback_data: `menu:${button.templateId}` }, { text: '🏠 الرئيسية', callback_data: `menu:${button.templateId}` }]);
+					await axios.post(`https://api.telegram.org/bot${encodeURIComponent(bot.token)}/editMessageText`, {
+						chat_id: chatId,
+						message_id: messageId,
+						text: `<b>${button.text}</b>\n\nاختر خيارًا:`,
+						parse_mode: 'HTML',
+						reply_markup: { inline_keyboard: rows }
+					});
+					return;
+				}
+
+				// Leaf button actions
+				if (button.buttonType === 'url' && button.url) {
+					await this.sendMessage(userId, String(chatId), `🔗 ${button.url}`);
+					return;
+				}
+				if (button.buttonType === 'callback' && button.callbackData) {
+					await this.sendMessage(userId, String(chatId), String(button.callbackData));
+					return;
+				}
+				await this.sendMessage(userId, String(chatId), `Selected: ${button.text}`);
+				return;
+			}
+
+			// Show template root menu
+			if (/^menu:\d+$/.test(data)) {
+				const templateId = Number(data.split(':')[1]);
+				const template = await TelegramTemplate.findByPk(templateId, { include: [{ model: TelegramTemplateButton, as: 'buttons', where: { parentButtonId: null }, required: false }] });
+				if (!template) return;
+				const rows = this.buildInlineKeyboard(template.buttons || [], 2, false);
+				await axios.post(`https://api.telegram.org/bot${encodeURIComponent(bot.token)}/editMessageText`, {
+					chat_id: chatId,
+					message_id: messageId,
+					text: this.formatTemplateMessage(template),
+					parse_mode: 'HTML',
+					reply_markup: { inline_keyboard: rows }
+				});
+				return;
+			}
+
+			// Fallback
+			await this.sendMessage(userId, String(chatId), data ? `Selected: ${data}` : 'Button pressed');
+		} catch (e) {
+			console.error('[TG-Bot] handleCallbackQuery error:', e.message);
+		}
 	}
 
 	async getChatAdministrators(userId, chatId) {
@@ -877,7 +929,7 @@ class TelegramBotService {
 		}
 	}
 
-	buildInlineKeyboard(buttons) {
+	buildInlineKeyboard(buttons, buttonsPerRow = 2, isSubmenu = false) {
 		const keyboard = [];
 		let currentRow = [];
 
@@ -891,7 +943,7 @@ class TelegramBotService {
 					buttonData.url = button.url;
 					break;
 				case 'callback':
-					buttonData.callback_data = button.callbackData;
+					buttonData.callback_data = `btn:${button.id}`;
 					break;
 				case 'web_app':
 					buttonData.web_app = { url: button.webAppUrl };
@@ -902,54 +954,27 @@ class TelegramBotService {
 				case 'switch_inline_current':
 					buttonData.switch_inline_query_current_chat = button.switchInlineQuery || '';
 					break;
+				default:
+					buttonData.callback_data = `btn:${button.id}`;
 			}
 
 			currentRow.push(buttonData);
-
-			// Add child buttons if they exist
-			if (button.ChildButtons && button.ChildButtons.length > 0) {
-				// For now, we'll add child buttons as separate rows
-				// In a more advanced implementation, you might want to handle nested buttons differently
-				for (const childButton of button.ChildButtons) {
-					const childButtonData = {
-						text: childButton.text
-					};
-
-					switch (childButton.buttonType) {
-						case 'url':
-							childButtonData.url = childButton.url;
-							break;
-						case 'callback':
-							childButtonData.callback_data = childButton.callbackData;
-							break;
-						case 'web_app':
-							childButtonData.web_app = { url: childButton.webAppUrl };
-							break;
-						case 'switch_inline':
-							childButtonData.switch_inline_query = childButton.switchInlineQuery || '';
-							break;
-						case 'switch_inline_current':
-							childButtonData.switch_inline_query_current_chat = childButton.switchInlineQuery || '';
-							break;
-					}
-
-					currentRow.push(childButtonData);
-				}
-			}
-
-			// Add row to keyboard (you might want to limit buttons per row)
-			if (currentRow.length >= 2) {
+			if (currentRow.length >= buttonsPerRow) {
 				keyboard.push(currentRow);
 				currentRow = [];
 			}
 		}
 
-		// Add remaining buttons
-		if (currentRow.length > 0) {
-			keyboard.push(currentRow);
-		}
-
+		if (currentRow.length > 0) keyboard.push(currentRow);
 		return keyboard;
+	}
+
+	formatTemplateMessage(template) {
+		let text = '';
+		if (template.headerText) text += `<b>${template.headerText}</b>\n\n`;
+		text += template.bodyText || '';
+		if (template.footerText) text += `\n\n<i>${template.footerText}</i>`;
+		return text.trim() || '<b>اختر خيارًا</b>';
 	}
 
 	async sendMediaMessage(botToken, chatId, template, messageData) {
