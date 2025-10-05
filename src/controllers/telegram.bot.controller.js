@@ -80,12 +80,18 @@ async function webhook(req, res) {
 		console.log('[TG-Bot] Webhook received update:', JSON.stringify(update, null, 2));
 		
 		// Process the update asynchronously
-		if (update && update.message) {
-			// Don't await - process in background
-			tgBot.handleIncomingMessage(userId, update).catch(err => {
-				console.error('[TG-Bot] Error processing webhook message:', err.message);
-			});
-		}
+    if (update && update.message) {
+      // Don't await - process in background
+      tgBot.handleIncomingMessage(userId, update).catch(err => {
+        console.error('[TG-Bot] Error processing webhook message:', err.message);
+      });
+    }
+    // Handle inline button presses (callback queries)
+    if (update && update.callback_query) {
+      tgBot.handleCallbackQuery(userId, update.callback_query).catch(err => {
+        console.error('[TG-Bot] Error processing callback query:', err.message);
+      });
+    }
 		
 		// Always respond quickly to Telegram
 		res.status(200).json({ ok: true });

@@ -155,6 +155,32 @@ class TelegramBotService {
 		}
 	}
 
+	async answerCallbackQuery(token, callbackQueryId, text = '', showAlert = false) {
+		const url = `https://api.telegram.org/bot${encodeURIComponent(token)}/answerCallbackQuery`;
+		const params = { callback_query_id: callbackQueryId };
+		if (text) params.text = text;
+		if (showAlert) params.show_alert = true;
+		await axios.post(url, params, { timeout: 10000 });
+	}
+
+	async handleCallbackQuery(userId, callbackQuery) {
+		const bot = await this.getActiveBot(userId);
+		if (!bot || !bot.token) throw new Error('No active bot found');
+
+		const data = String(callbackQuery.data || '').trim();
+		const message = callbackQuery.message;
+		const chatId = message?.chat?.id;
+
+		// Acknowledge the button press quickly
+		try { await this.answerCallbackQuery(bot.token, callbackQuery.id); } catch {}
+
+		if (!chatId) return;
+
+		// Echo or map the callback data to a response. For now, just send the data.
+		const responseText = data ? `Selected: ${data}` : 'Button pressed';
+		await this.sendMessage(userId, String(chatId), responseText);
+	}
+
 	async getChatAdministrators(userId, chatId) {
 		const bot = await this.getActiveBot(userId);
 		if (!bot || !bot.token) throw new Error('No active bot found');
