@@ -5,13 +5,18 @@ const TelegramChat = require('../models/telegramChat');
 async function connect(req, res) {
 	try {
 		const userId = req.userId;
-		const { token, baseUrl } = req.body || {};
-		console.log('[TG-Bot] Connect request:', { userId, hasToken: !!token, baseUrl });
+    const { token, baseUrl } = req.body || {};
+    console.log('[TG-Bot] Connect request:', { userId, hasToken: !!token, baseUrl });
 		
 		if (!token) return res.status(400).json({ success: false, message: 'token required' });
 		
-		const publicBase = baseUrl || process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
-		console.log('[TG-Bot] Using webhook base URL:', publicBase);
+    const forwardedProto = (req.headers['x-forwarded-proto'] || '').toString().split(',')[0]?.trim();
+    const forwardedHost = (req.headers['x-forwarded-host'] || '').toString().split(',')[0]?.trim();
+    const proto = forwardedProto || req.protocol || 'http';
+    const host = forwardedHost || req.get('host');
+    const inferredBase = host ? `${proto}://${host}` : '';
+    const publicBase = baseUrl || process.env.NEXT_PUBLIC_API_URL || inferredBase;
+    console.log('[TG-Bot] Using webhook base URL:', publicBase);
 		
 		const info = await tgBot.connectBot(userId, token, publicBase);
 		console.log('[TG-Bot] Connect success:', info);

@@ -45,6 +45,8 @@ require('./models/telegramTemplate');
 require('./models/user');
 
 const app = express();
+// Honor X-Forwarded-* headers from proxy/CDN to get correct protocol/host
+app.set('trust proxy', true);
 // CORS configuration - comprehensive setup
 const allowedOrigins = [
   'https://www.flooxira.com',

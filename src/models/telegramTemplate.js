@@ -23,8 +23,18 @@ const TelegramTemplate = sequelize.define('TelegramTemplate', {
     defaultValue: 'text' 
   },
   mediaType: { 
-    type: DataTypes.ENUM('photo', 'video', 'document', 'audio', 'voice'), 
-    allowNull: true 
+    // Use STRING to be tolerant across DBs (MySQL ENUM is strict)
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    validate: {
+      isInAllowed(value) {
+        if (value == null || value === '') return; // allow empty/nullable
+        const allowed = ['photo', 'video', 'document', 'audio', 'voice', 'image'];
+        if (!allowed.includes(String(value))) {
+          throw new Error('Invalid mediaType');
+        }
+      }
+    }
   },
   mediaUrl: { type: DataTypes.TEXT, allowNull: true },
   pollOptions: { type: DataTypes.TEXT, allowNull: true }, // JSON array for poll options
