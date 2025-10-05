@@ -42,6 +42,7 @@ require('./models/botField');
 require('./models/botData');
 require('./models/whatsappTemplate');
 require('./models/telegramTemplate');
+require('./models/user');
 
 const app = express();
 // CORS configuration - comprehensive setup
