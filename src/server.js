@@ -272,165 +272,26 @@ app.post('/connect-facebook', async (req, res) => {
 const port = process.env.PORT || 4000;
 
 async function start() {
-  await sequelize.authenticate();
-  // Ensure critical schema migrations without destructive force
   try {
-    const isMySQL = (process.env.DB_DIALECT || '').toLowerCase() === 'mysql';
-    if (isMySQL) {
-      // Upgrade tiktok_accounts.profilePicture to TEXT if still VARCHAR(255)
-      const qi = sequelize.getQueryInterface();
-      const table = 'tiktok_accounts';
-      let desc;
-      try {
-        desc = await qi.describeTable(table);
-      } catch {}
-      const col = desc && desc.profilePicture;
-      const typeStr = String(col && col.type || '').toLowerCase();
-      if (col && /varchar\(\d+\)/.test(typeStr)) {
-        console.log('Altering column tiktok_accounts.profilePicture to TEXT');
-        await sequelize.query('ALTER TABLE `tiktok_accounts` MODIFY `profilePicture` TEXT NULL');
-      }
+    await sequelize.authenticate();
+    console.log('Database connection authenticated successfully.');
 
-      // Ensure users.botPaused and users.botPausedUntil columns exist
-      try {
-        const usersDesc = await qi.describeTable('users');
-        if (!usersDesc.botPaused) {
-          console.log('Adding missing column users.botPaused');
-          await sequelize.query('ALTER TABLE `users` ADD COLUMN `botPaused` TINYINT(1) NOT NULL DEFAULT 0');
-        }
-        if (!usersDesc.botPausedUntil) {
-          console.log('Adding missing column users.botPausedUntil');
-          await sequelize.query('ALTER TABLE `users` ADD COLUMN `botPausedUntil` DATETIME NULL');
-        }
-      } catch (usersAlterErr) {
-        console.warn('users table ensure columns step failed:', usersAlterErr?.message || usersAlterErr);
-      }
-
-      // Ensure telegram_bot_accounts table exists
-      try {
-        await qi.describeTable('telegram_bot_accounts');
-      } catch (e) {
-        console.log('Creating missing table telegram_bot_accounts');
-        await sequelize.query(
-          'CREATE TABLE IF NOT EXISTS `telegram_bot_accounts` (\n' +
-          '  `id` INT NOT NULL AUTO_INCREMENT,\n' +
-          '  `userId` INT NOT NULL,\n' +
-          '  `botUserId` VARCHAR(255) NULL,\n' +
-          '  `username` VARCHAR(255) NULL,\n' +
-          '  `name` VARCHAR(255) NULL,\n' +
-          '  `token` TEXT NULL,\n' +
-          '  `webhookSecret` VARCHAR(255) NULL,\n' +
-          '  `isActive` TINYINT(1) NOT NULL DEFAULT 1,\n' +
-          '  `lastSyncAt` DATETIME NULL,\n' +
-          '  `createdAt` DATETIME NOT NULL,\n' +
-          '  `updatedAt` DATETIME NOT NULL,\n' +
-          '  PRIMARY KEY (`id`),\n' +
-          '  INDEX `idx_tg_user` (`userId`)\n' +
-          ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;'
-        );
-      }
-    }
-  } catch (migErr) {
-    console.warn('Non-fatal schema migration step failed:', migErr?.message || migErr);
-  }
-  try {
-    // Database sync mode: 'alter' (default) or 'force'
-    // IMPORTANT: 'alter' mode preserves existing data while updating schema
-    // 'force' mode DROPS ALL TABLES and recreates them (DATA LOSS!)
-    const dbSyncMode = (process.env.DB_SYNC_MODE || 'alter').toLowerCase();
-    let useForce = dbSyncMode === 'force';
-    let useAlter = dbSyncMode === 'alter';
-    const allowForceInProd = String(process.env.ALLOW_FORCE_SYNC || '').trim() === '1';
-    
-    // Safety check: prevent accidental force sync in production
-    if (useForce && process.env.NODE_ENV === 'production' && !allowForceInProd) {
-      console.error('❌ FORCE SYNC BLOCKED: Cannot use force sync in production!');
-      console.log('🔄 Falling back to ALTER mode to preserve data...');
-      useAlter = true;
-      useForce = false;
-    }
-    
-    let syncOptions = {};
-    
-    if (useForce) {
-      console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables...');
-      console.log('⚠️  WARNING: This will DELETE ALL DATA!');
-      syncOptions = { force: true };
-
-    // Clean up legacy tables that might have FKs blocking drops (from removed Telegram models)
-    try {
-      const qi = sequelize.getQueryInterface();
-      const legacyTables = ['telegram_chats', 'telegram_accounts', 'telegram_schedules', 'telegram_sessions'];
-      for (const t of legacyTables) {
-        try {
-          // Drop foreign keys referencing users if needed
-          // Best-effort: attempt direct drop; MySQL will handle IF EXISTS
-          await sequelize.query(`DROP TABLE IF EXISTS \`${t}\``);
-        } catch (dropErr) {
-          console.warn(`[DB] Could not drop legacy table ${t}:`, dropErr?.message || dropErr);
-        }
-      }
-    } catch (legacyErr) {
-      console.warn('[DB] Legacy cleanup skipped:', legacyErr?.message || legacyErr);
-      }
-    } else if (useAlter) {
-      console.log('🔄 ALTER SYNC: Updating existing tables to match models...');
-      console.log('✅ This will preserve existing data while updating schema');
-      
-      // For SQLite, we need to handle foreign key constraints carefully
-      if (process.env.DB_DIALECT === 'sqlite') {
-        console.log('🔧 SQLite detected: Using safe alter mode with foreign key handling...');
-        
-        // Disable foreign key constraints temporarily for SQLite
-        await sequelize.query('PRAGMA foreign_keys=OFF');
-        
-        try {
-          syncOptions = { alter: true };
-          await sequelize.sync(syncOptions);
-        } catch (alterError) {
-          console.warn('⚠️  ALTER SYNC failed, trying fallback approach...', alterError.message);
-          
-          // Check if it's a constraint error (common with SQLite)
-          if (alterError.name === 'SequelizeForeignKeyConstraintError' || 
-              alterError.name === 'SequelizeUniqueConstraintError' ||
-              alterError.message.includes('SQLITE_CONSTRAINT')) {
-            console.log('🔧 Constraint error detected - using safe fallback...');
-          }
-          
-          // Fallback: try normal sync (create missing tables only)
-          console.log('🔄 FALLBACK: Creating missing tables only...');
-          syncOptions = {};
-          await sequelize.sync(syncOptions);
-        } finally {
-          // Re-enable foreign key constraints
-          await sequelize.query('PRAGMA foreign_keys=ON');
-        }
-      } else {
-        syncOptions = { alter: true };
-        await sequelize.sync(syncOptions);
-      }
+    console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables...');
+    console.log('⚠️  WARNING: This will DELETE ALL DATA on each deploy.');
+    await sequelize.sync({ force: true });
+    console.log('✅ Database schema synchronized (all tables recreated).');
+  } catch (error) {
+    if (
+      error.name === 'SequelizeConnectionRefusedError' ||
+      error.name === 'SequelizeHostNotFoundError' ||
+      error.name === 'SequelizeConnectionTimedOut' ||
+      error.name === 'SequelizeAccessDeniedError'
+    ) {
+      console.error('❌ Database connection error:', error.message);
     } else {
-      console.log('📋 NORMAL SYNC: Creating tables if they don\'t exist...');
-      console.log('✅ This will only create missing tables');
-      syncOptions = {};
-    await sequelize.sync(syncOptions);
+      console.error('❌ Database synchronization error:', error.message);
     }
-    
-    if (syncOptions.force) {
-      console.log('✅ FORCE SYNC COMPLETED: All tables dropped and recreated!');
-    } else if (syncOptions.alter) {
-      console.log('✅ ALTER SYNC COMPLETED: Tables updated to match models!');
-    } else {
-      console.log('✅ SYNC COMPLETED: Database synchronized!');
-    }
-  } catch (err) {
-    console.error('Sequelize sync failed:', err?.stack || err);
-    if (process.env.NODE_ENV === 'development' && process.env.SQLITE_RESET === '1') {
-      console.warn('Resetting DB with force sync (dev only)');
-      await sequelize.sync({ force: true });
-    } else {
-      throw err;
-    }
+    process.exit(1);
   }
   // Start scheduler after DB is ready
   try { require('./scheduler').startScheduler(); } catch {}
