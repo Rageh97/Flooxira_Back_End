@@ -290,6 +290,21 @@ async function start() {
         console.log('Altering column tiktok_accounts.profilePicture to TEXT');
         await sequelize.query('ALTER TABLE `tiktok_accounts` MODIFY `profilePicture` TEXT NULL');
       }
+
+      // Ensure users.botPaused and users.botPausedUntil columns exist
+      try {
+        const usersDesc = await qi.describeTable('users');
+        if (!usersDesc.botPaused) {
+          console.log('Adding missing column users.botPaused');
+          await sequelize.query('ALTER TABLE `users` ADD COLUMN `botPaused` TINYINT(1) NOT NULL DEFAULT 0');
+        }
+        if (!usersDesc.botPausedUntil) {
+          console.log('Adding missing column users.botPausedUntil');
+          await sequelize.query('ALTER TABLE `users` ADD COLUMN `botPausedUntil` DATETIME NULL');
+        }
+      } catch (usersAlterErr) {
+        console.warn('users table ensure columns step failed:', usersAlterErr?.message || usersAlterErr);
+      }
     }
   } catch (migErr) {
     console.warn('Non-fatal schema migration step failed:', migErr?.message || migErr);
