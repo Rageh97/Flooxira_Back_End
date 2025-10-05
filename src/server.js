@@ -299,15 +299,16 @@ async function start() {
     // IMPORTANT: 'alter' mode preserves existing data while updating schema
     // 'force' mode DROPS ALL TABLES and recreates them (DATA LOSS!)
     const dbSyncMode = (process.env.DB_SYNC_MODE || 'alter').toLowerCase();
-    const useForce = dbSyncMode === 'force';
-    const useAlter = dbSyncMode === 'alter';
+    let useForce = dbSyncMode === 'force';
+    let useAlter = dbSyncMode === 'alter';
+    const allowForceInProd = String(process.env.ALLOW_FORCE_SYNC || '').trim() === '1';
     
     // Safety check: prevent accidental force sync in production
-    if (useForce && process.env.NODE_ENV === 'production') {
+    if (useForce && process.env.NODE_ENV === 'production' && !allowForceInProd) {
       console.error('❌ FORCE SYNC BLOCKED: Cannot use force sync in production!');
       console.log('🔄 Falling back to ALTER mode to preserve data...');
-      const useAlter = true;
-      const useForce = false;
+      useAlter = true;
+      useForce = false;
     }
     
     let syncOptions = {};
