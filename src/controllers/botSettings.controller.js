@@ -37,7 +37,14 @@ exports.getBotSettings = async (req, res) => {
 exports.updateBotSettings = async (req, res) => {
   try {
     const userId = req.user.id;
-    const updateData = req.body;
+    const updateData = req.body || {};
+    if (updateData.autoReplyTemplateId !== undefined) {
+      if (updateData.autoReplyTemplateId === null || updateData.autoReplyTemplateId === '') {
+        updateData.autoReplyTemplateId = null;
+      } else {
+        updateData.autoReplyTemplateId = Number(updateData.autoReplyTemplateId) || null;
+      }
+    }
     
     // Remove fields that shouldn't be updated directly
     delete updateData.id;

@@ -16,10 +16,7 @@ const BotSettings = sequelize.define('BotSettings', {
   autoReplyTemplateId: {
     type: DataTypes.INTEGER,
     allowNull: true,
-    references: {
-      model: 'telegram_templates',
-      key: 'id'
-    }
+    // Removed foreign key constraint to avoid save errors when templates are recreated
   },
   // Removed button color preference
   userId: {
