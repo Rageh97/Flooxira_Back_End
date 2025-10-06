@@ -13,6 +13,7 @@ router.post('/connect', ctrl.connect);
 router.get('/info', ctrl.info);
 router.get('/test', ctrl.testBot);
 // Removed legacy send endpoint
+router.post('/send', ctrl.sendMessage);
 router.get('/chat/:chatId', ctrl.getChat);
 router.get('/chat/:chatId/admins', ctrl.getChatAdmins);
 router.post('/promote', ctrl.promoteMember);

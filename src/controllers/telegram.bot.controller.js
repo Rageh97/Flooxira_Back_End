@@ -607,6 +607,7 @@ module.exports = {
 	getUpdates, getChatHistory, getChatStats, getChatContacts, exportMembers, getChatMembersInfo, getBotChats,
   sendTemplateMessage, getActiveTemplates, findMatchingTemplate, testTemplateMatching,
   createTelegramCampaign, listTelegramCampaigns, listTelegramMonthlySchedules,
-  updateTelegramScheduleController, deleteTelegramScheduleController
+  updateTelegramScheduleController, deleteTelegramScheduleController,
+  sendMessage
 };
 
