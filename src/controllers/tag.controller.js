@@ -1,5 +1,7 @@
 const { Op } = require('sequelize');
 const { Tag, ContactTag } = require('../models/tag');
+const { TelegramChatTag } = require('../models/telegramChatTag');
+const TelegramChat = require('../models/telegramChat');
 
 exports.createTag = async (req, res) => {
   try {
@@ -117,6 +119,51 @@ exports.listContactsByTag = async (req, res) => {
     const userId = req.user.id;
     const id = parseInt(req.params.id);
     const items = await ContactTag.findAll({ where: { userId, tagId: id }, order: [['createdAt', 'DESC']] });
+    return res.json({ success: true, data: items });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+// Telegram chat tags
+exports.addTelegramChatToTag = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const tagId = parseInt(req.params.id);
+    const { chatId } = req.body;
+    if (!chatId) return res.status(400).json({ success: false, message: 'chatId required' });
+    const tag = await Tag.findOne({ where: { id: tagId, userId } });
+    if (!tag) return res.status(404).json({ success: false, message: 'Tag not found' });
+    let chatTitle = null;
+    try {
+      const last = await TelegramChat.findOne({ where: { userId, chatId }, order: [['timestamp','DESC']] });
+      chatTitle = last?.chatTitle || null;
+    } catch {}
+    const record = await TelegramChatTag.findOrCreate({ where: { userId, tagId, chatId }, defaults: { userId, tagId, chatId, chatTitle } });
+    return res.json({ success: true, data: record[0] });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.removeTelegramChatFromTag = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const tagId = parseInt(req.params.id);
+    const { chatId } = req.body;
+    if (!chatId) return res.status(400).json({ success: false, message: 'chatId required' });
+    const count = await TelegramChatTag.destroy({ where: { userId, tagId, chatId } });
+    return res.json({ success: true, removed: count });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+exports.listTelegramChatsByTag = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const tagId = parseInt(req.params.id);
+    const items = await TelegramChatTag.findAll({ where: { userId, tagId }, order: [['createdAt','DESC']] });
     return res.json({ success: true, data: items });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });

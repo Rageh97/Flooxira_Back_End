@@ -44,6 +44,7 @@ require('./models/whatsappTemplate');
 require('./models/telegramTemplate');
 require('./models/user');
 require('./models/telegramSchedule');
+require('./models/telegramChatTag');
 
 const app = express();
 // Honor X-Forwarded-* headers from proxy/CDN to get correct protocol/host

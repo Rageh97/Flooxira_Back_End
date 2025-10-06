@@ -264,9 +264,15 @@ async function getChatContacts(req, res) {
 async function createTelegramCampaign(req, res) {
   try {
     const userId = req.userId;
-    const { targets, message, scheduleAt, throttleMs, timezoneOffset, mediaUrl } = req.body || {};
-    if (!Array.isArray(targets) || targets.length === 0) {
-      return res.status(400).json({ success: false, message: 'targets is required' });
+    const { targets, tagIds, message, scheduleAt, throttleMs, timezoneOffset, mediaUrl } = req.body || {};
+    let resolvedTargets = Array.isArray(targets) ? targets.slice() : [];
+    if (Array.isArray(tagIds) && tagIds.length > 0) {
+      const { TelegramChatTag } = require('../models/telegramChatTag');
+      const rows = await TelegramChatTag.findAll({ where: { userId, tagId: tagIds } });
+      for (const r of rows) { if (!resolvedTargets.includes(r.chatId)) resolvedTargets.push(r.chatId); }
+    }
+    if (!Array.isArray(resolvedTargets) || resolvedTargets.length === 0) {
+      return res.status(400).json({ success: false, message: 'targets or tagIds required' });
     }
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ success: false, message: 'message is required' });
@@ -276,7 +282,7 @@ async function createTelegramCampaign(req, res) {
       const svc = require('../services/telegramBotService');
       const ms = Number(throttleMs || 1500);
       let sent = 0;
-      for (const t of targets) {
+      for (const t of resolvedTargets) {
         try {
           if (mediaUrl) {
             await svc.sendMediaUrl(userId, String(t), String(mediaUrl), String(message || ''));
@@ -295,7 +301,7 @@ async function createTelegramCampaign(req, res) {
         status: 'completed',
         type: 'campaign',
         scheduledAt: new Date(),
-        payload: { targets, message, mediaUrl: mediaUrl || null, throttleMs: Number(throttleMs || 1500) },
+        payload: { targets: resolvedTargets, message, mediaUrl: mediaUrl || null, throttleMs: Number(throttleMs || 1500) },
         result: `Sent ${sent}/${targets.length}`
       });
       return res.json({ success: true, id: job.id });
@@ -314,7 +320,7 @@ async function createTelegramCampaign(req, res) {
       status: 'pending',
       type: 'campaign',
       scheduledAt: when,
-      payload: { targets, message, mediaUrl: mediaUrl || null, throttleMs: Number(throttleMs || 1500) }
+      payload: { targets: resolvedTargets, message, mediaUrl: mediaUrl || null, throttleMs: Number(throttleMs || 1500) }
     });
     return res.json({ success: true, id: job.id });
   } catch (e) {
