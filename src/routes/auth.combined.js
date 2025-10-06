@@ -138,30 +138,45 @@ router.get('/instagram', async (req, res) => {
 
 // ===== YOUTUBE (GOOGLE) OAUTH ROUTES =====
 
-router.get('/youtube', (req, res) => {
+router.get('/youtube', async (req, res) => {
   try {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/youtube/callback`;
-    if (!clientId || !clientSecret) {
-      return res.status(500).json({ message: 'YouTube integration not configured' });
+    const userId = req.query.userId;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'userId parameter is required' });
     }
+    
+    // Get user's YouTube app credentials
+    const { getClientCredentials } = require('../services/credentialsService');
+    const { clientId, clientSecret, redirectUri } = await getClientCredentials(parseInt(userId), 'youtube');
+    
+    if (!clientId || !clientSecret || !redirectUri) {
+      return res.status(400).json({ 
+        error: 'YouTube app credentials not configured for this user',
+        message: 'Please configure YouTube app credentials in settings'
+      });
+    }
+    
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
     const state = crypto.randomBytes(16).toString('hex');
-    oauthStates.set(state, { timestamp: Date.now() });
+    oauthStates.set(state, { timestamp: Date.now(), userId });
+    
     const scopes = [
       'https://www.googleapis.com/auth/youtube.upload',
       'https://www.googleapis.com/auth/youtube.readonly',
+      'https://www.googleapis.com/auth/youtube',
       'openid',
       'email',
       'profile'
     ];
+    
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
       scope: scopes,
       state
     });
+    
     return res.redirect(url);
   } catch (err) {
     console.error('Failed to start YouTube OAuth:', err);
@@ -210,25 +225,35 @@ function generateState() {
 }
 
 // Start TikTok OAuth flow
-router.get('/tiktok', (req, res) => {
+router.get('/tiktok', async (req, res) => {
   try {
-    if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET) {
-      console.error('TikTok credentials not configured');
-      return res.status(500).json({ 
-        error: 'TikTok integration not configured',
-        message: 'Please configure TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET in environment variables'
+    const userId = req.query.userId;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'userId parameter is required' });
+    }
+    
+    // Get user's TikTok app credentials
+    const { getClientCredentials } = require('../services/credentialsService');
+    const { clientId, redirectUri } = await getClientCredentials(parseInt(userId), 'tiktok');
+    
+    if (!clientId || !redirectUri) {
+      return res.status(400).json({ 
+        error: 'TikTok app credentials not configured for this user',
+        message: 'Please configure TikTok app credentials in settings'
       });
     }
 
     // Generate state for CSRF protection
     const state = generateState();
+    oauthStates.set(state, { timestamp: Date.now(), userId });
     
     // Build TikTok authorization URL (v2)
     const authUrl = new URL('https://www.tiktok.com/v2/auth/authorize/');
-    authUrl.searchParams.set('client_key', TIKTOK_CLIENT_KEY);
+    authUrl.searchParams.set('client_key', clientId);
     authUrl.searchParams.set('scope', TIKTOK_SCOPES);
     authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('redirect_uri', TIKTOK_REDIRECT_URI);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
     authUrl.searchParams.set('state', state);
     
     console.log('TikTok OAuth URL generated:', authUrl.toString());
@@ -412,16 +437,27 @@ router.get('/linkedin/callback', async (req, res) => {
 
 // ===== TWITTER OAUTH (AUTHORIZATION URL ONLY) =====
 
-router.get('/twitter', (req, res) => {
+router.get('/twitter', async (req, res) => {
   try {
-    const clientId = process.env.TWITTER_CLIENT_ID;
-    const redirectUri = process.env.TWITTER_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/twitter/callback`;
-    if (!clientId) {
-      return res.status(500).json({ message: 'Twitter integration not configured' });
+    const userId = req.query.userId;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'userId parameter is required' });
+    }
+    
+    // Get user's Twitter app credentials
+    const { getClientCredentials } = require('../services/credentialsService');
+    const { clientId, redirectUri } = await getClientCredentials(parseInt(userId), 'twitter');
+    
+    if (!clientId || !redirectUri) {
+      return res.status(400).json({ 
+        error: 'Twitter app credentials not configured for this user',
+        message: 'Please configure Twitter app credentials in settings'
+      });
     }
 
     const state = crypto.randomBytes(16).toString('hex');
-    oauthStates.set(state, { timestamp: Date.now() });
+    oauthStates.set(state, { timestamp: Date.now(), userId });
 
     // PKCE
     const codeVerifier = crypto.randomBytes(32).toString('hex');
