@@ -50,7 +50,7 @@ const WhatsappChat = sequelize.define('WhatsappChat', {
     allowNull: true
   },
   responseSource: {
-    type: DataTypes.ENUM('knowledge_base', 'openai', 'gemini', 'small_talk', 'fallback'),
+    type: DataTypes.STRING(50),
     allowNull: true
   },
   knowledgeBaseMatch: {
