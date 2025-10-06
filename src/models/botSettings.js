@@ -21,11 +21,7 @@ const BotSettings = sequelize.define('BotSettings', {
       key: 'id'
     }
   },
-  // UI Preference: default button color for new buttons (optional)
-  buttonColorDefault: {
-    type: DataTypes.STRING(16),
-    allowNull: true
-  },
+  // Removed button color preference
   userId: {
     type: DataTypes.INTEGER,
     allowNull: false,

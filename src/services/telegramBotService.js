@@ -971,14 +971,7 @@ class TelegramBotService {
 				text: button.text
 			};
 
-			// Optional color hint via emoji prefix for visual grouping
-			if (button.color) {
-				const color = String(button.color).toLowerCase();
-				const colorEmoji = color.includes('red') ? '🔴' : color.includes('green') ? '🟢' : color.includes('blue') ? '🔵' : color.includes('yellow') ? '🟡' : color.includes('purple') ? '🟣' : color.includes('orange') ? '🟠' : '';
-				if (colorEmoji) {
-					buttonData.text = `${colorEmoji} ${buttonData.text}`;
-				}
-			}
+
 
 			switch (button.buttonType) {
 				case 'url':
