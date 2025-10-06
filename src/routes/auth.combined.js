@@ -8,9 +8,25 @@ const oauthStates = new Map();
 
 // ===== FACEBOOK OAUTH ROUTES =====
 
-router.get('/facebook', (req, res) => {
+// ===== FACEBOOK OAUTH ROUTES =====
+
+router.get('/facebook', async (req, res) => {
   const state = crypto.randomBytes(32).toString('hex');
-  oauthStates.set(state, { timestamp: Date.now() });
+  const userId = req.query.userId; // Get userId from query parameter
+  
+  if (!userId) {
+    return res.status(400).json({ error: 'userId parameter is required' });
+  }
+  
+  oauthStates.set(state, { timestamp: Date.now(), userId });
+  
+  // Get user's Facebook app credentials
+  const { getClientCredentials } = require('../services/credentialsService');
+  const { clientId, redirectUri } = await getClientCredentials(parseInt(userId), 'facebook');
+  
+  if (!clientId || !redirectUri) {
+    return res.status(400).json({ error: 'Facebook app credentials not configured for this user' });
+  }
   
   // Include Facebook permissions for posting to pages and Instagram
   const scopes = [
@@ -26,8 +42,8 @@ router.get('/facebook', (req, res) => {
   ].join(',');
   
   const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?` +
-    `client_id=${process.env.FB_APP_ID}` +
-    `&redirect_uri=${process.env.FB_REDIRECT_URI}` +
+    `client_id=${clientId}` +
+    `&redirect_uri=${redirectUri}` +
     `&state=${state}` +
     `&scope=${scopes}` +
     `&auth_type=rerequest`;
@@ -78,9 +94,23 @@ router.get('/callback', async (req, res) => {
 // ===== INSTAGRAM OAUTH ROUTES =====
 // Instagram uses Facebook OAuth with Instagram scopes
 
-router.get('/instagram', (req, res) => {
+router.get('/instagram', async (req, res) => {
   const state = crypto.randomBytes(32).toString('hex');
-  oauthStates.set(state, { timestamp: Date.now(), platform: 'instagram' });
+  const userId = req.query.userId; // Get userId from query parameter
+  
+  if (!userId) {
+    return res.status(400).json({ error: 'userId parameter is required' });
+  }
+  
+  oauthStates.set(state, { timestamp: Date.now(), platform: 'instagram', userId });
+  
+  // Get user's Facebook app credentials (Instagram uses Facebook OAuth)
+  const { getClientCredentials } = require('../services/credentialsService');
+  const { clientId, redirectUri } = await getClientCredentials(parseInt(userId), 'facebook');
+  
+  if (!clientId || !redirectUri) {
+    return res.status(400).json({ error: 'Facebook app credentials not configured for this user' });
+  }
   
   // Include Instagram-specific permissions
   const scopes = [
@@ -96,8 +126,8 @@ router.get('/instagram', (req, res) => {
   ].join(',');
   
   const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?` +
-    `client_id=${process.env.FB_APP_ID}` +
-    `&redirect_uri=${process.env.FB_REDIRECT_URI}` +
+    `client_id=${clientId}` +
+    `&redirect_uri=${redirectUri}` +
     `&state=${state}` +
     `&scope=${scopes}` +
     `&auth_type=rerequest`;
@@ -445,21 +475,27 @@ router.get('/twitter/callback', (req, res) => {
 
 // ===== PINTEREST OAUTH ROUTES =====
 
-router.get('/pinterest', (req, res) => {
+router.get('/pinterest', async (req, res) => {
   try {
-    const clientId = process.env.PINTEREST_APP_ID;
-    const redirectUri = process.env.PINTEREST_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/pinterest/callback`;
+    const userId = req.query.userId;
     
-    if (!clientId) {
-      console.error('Pinterest credentials not configured');
-      return res.status(500).json({ 
-        error: 'Pinterest integration not configured',
-        message: 'Please configure PINTEREST_APP_ID and PINTEREST_APP_SECRET in environment variables'
+    if (!userId) {
+      return res.status(400).json({ error: 'userId parameter is required' });
+    }
+    
+    // Get user's Pinterest app credentials
+    const { getClientCredentials } = require('../services/credentialsService');
+    const { clientId, redirectUri } = await getClientCredentials(parseInt(userId), 'pinterest');
+    
+    if (!clientId || !redirectUri) {
+      return res.status(400).json({ 
+        error: 'Pinterest app credentials not configured for this user',
+        message: 'Please configure Pinterest app credentials in settings'
       });
     }
 
     const state = crypto.randomBytes(16).toString('hex');
-    oauthStates.set(state, { timestamp: Date.now() });
+    oauthStates.set(state, { timestamp: Date.now(), userId });
 
     // Pinterest OAuth scopes (include boards:write for pin creation)
     const scopes = [
