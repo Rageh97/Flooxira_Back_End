@@ -201,8 +201,8 @@ class TelegramBotService {
 				const button = await TelegramTemplateButton.findByPk(buttonId, { include: [{ model: TelegramTemplateButton, as: 'ChildButtons' }] });
 				if (!button) return;
 
-				if (Array.isArray(button.ChildButtons) && button.ChildButtons.length > 0) {
-					const rows = this.buildInlineKeyboard(button.ChildButtons, 2, true);
+                if (Array.isArray(button.ChildButtons) && button.ChildButtons.length > 0) {
+                    const rows = this.buildInlineKeyboard(button.ChildButtons, 2, true);
 					rows.push([{ text: '⬅️ رجوع', callback_data: `menu:${button.templateId}` }, { text: '🏠 الرئيسية', callback_data: `menu:${button.templateId}` }]);
 					await axios.post(`https://api.telegram.org/bot${encodeURIComponent(bot.token)}/editMessageText`, {
 						chat_id: chatId,
@@ -215,7 +215,16 @@ class TelegramBotService {
 				}
 
 				// Leaf button actions
-				if (button.buttonType === 'url' && button.url) {
+                // If this button has media configured, send it
+                if (button.mediaUrl) {
+                    try {
+                        await this.sendMediaUrl(userId, String(chatId), String(button.mediaUrl), button.text || '');
+                    } catch (e) {
+                        await this.sendMessage(userId, String(chatId), button.text || '');
+                    }
+                    return;
+                }
+                if (button.buttonType === 'url' && button.url) {
 					await this.sendMessage(userId, String(chatId), `🔗 ${button.url}`);
 					return;
 				}

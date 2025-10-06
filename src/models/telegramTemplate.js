@@ -77,7 +77,10 @@ const TelegramTemplateButton = sequelize.define('TelegramTemplateButton', {
   webAppUrl: { type: DataTypes.TEXT, allowNull: true },
   switchInlineQuery: { type: DataTypes.TEXT, allowNull: true },
   displayOrder: { type: DataTypes.INTEGER, defaultValue: 0 },
-  isActive: { type: DataTypes.BOOLEAN, defaultValue: true }
+  isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+  // Optional media to send when this button is pressed (leaf action)
+  mediaType: { type: DataTypes.STRING(20), allowNull: true },
+  mediaUrl: { type: DataTypes.TEXT, allowNull: true }
 }, {
   tableName: 'telegram_template_buttons',
   timestamps: true,
