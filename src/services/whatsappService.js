@@ -107,6 +107,10 @@ class WhatsAppService {
 
   async startSession(userId, options = {}) {
     try {
+      // Explicitly clear stopped flag when starting
+      const prev = this.userStates.get(userId) || {};
+      prev.stopped = false;
+      this.userStates.set(userId, prev);
       // Check if already initializing
       const state = this.userStates.get(userId);
       if (state?.initializing) {
@@ -138,7 +142,7 @@ class WhatsAppService {
       }
 
       // Set initializing state and reset message counter
-      this.userStates.set(userId, { initializing: true, reconnecting: false });
+      this.userStates.set(userId, { initializing: true, reconnecting: false, stopped: false });
       this.messageCounters.set(userId, 0);
 
       // Create WhatsApp client with enhanced configuration
@@ -407,6 +411,8 @@ class WhatsAppService {
     const s = this.userStates.get(userId) || {};
     s.initializing = false;
     s.ready = false;
+    // If the session was explicitly stopped, do not auto-reconnect
+    const shouldStayStopped = Boolean(s.stopped);
     
     // Clear keep-alive interval
     if (s.keepAliveInterval) {
@@ -416,8 +422,8 @@ class WhatsAppService {
     
     this.userStates.set(userId, s);
     
-    // Auto-reconnect after 5 seconds
-    if (!this.userStates.get(userId)?.reconnecting) {
+    // Auto-reconnect after 5 seconds (unless explicitly stopped)
+    if (!shouldStayStopped && !this.userStates.get(userId)?.reconnecting) {
       const s = this.userStates.get(userId) || {};
       s.reconnecting = true;
       this.userStates.set(userId, s);
@@ -948,6 +954,13 @@ class WhatsAppService {
 
   async stopSession(userId) {
     try {
+      // Mark as explicitly stopped to prevent auto-reconnect
+      const state = this.userStates.get(userId) || {};
+      state.stopped = true;
+      state.initializing = false;
+      state.reconnecting = false;
+      this.userStates.set(userId, state);
+
       const client = this.userClients.get(userId);
       if (client) {
         await client.destroy();
@@ -959,12 +972,10 @@ class WhatsAppService {
       const s = this.userStates.get(userId) || {};
       s.initializing = false;
       s.ready = false;
-      
       if (s.keepAliveInterval) {
         clearInterval(s.keepAliveInterval);
         s.keepAliveInterval = null;
       }
-      
       this.userStates.set(userId, s);
       
       return { success: true, message: 'WhatsApp session stopped' };
