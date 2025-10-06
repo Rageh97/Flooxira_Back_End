@@ -23,9 +23,11 @@ const BotSettings = sequelize.define('BotSettings', {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: 'Users',
+      model: 'users',
       key: 'id'
-    }
+    },
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE'
   },
   // AI Model Settings
   aiProvider: {

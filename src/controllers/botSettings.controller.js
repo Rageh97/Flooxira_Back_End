@@ -82,10 +82,13 @@ exports.updateBotSettings = async (req, res) => {
       await settings.update(updateData);
     } else {
       // Create new settings
-      settings = await BotSettings.create({
-        userId,
-        ...updateData
-      });
+      // Ensure user exists before creating settings
+      const { User } = require('../models/user');
+      const exists = await User.findByPk(userId);
+      if (!exists) {
+        return res.status(400).json({ success: false, message: 'Invalid user' });
+      }
+      settings = await BotSettings.create({ userId, ...updateData });
     }
     
     res.json({
