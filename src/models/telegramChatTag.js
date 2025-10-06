@@ -21,3 +21,4 @@ const TelegramChatTag = sequelize.define('TelegramChatTag', {
 module.exports = { TelegramChatTag };
 
 
+
