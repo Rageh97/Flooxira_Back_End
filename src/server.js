@@ -45,6 +45,7 @@ require('./models/telegramTemplate');
 require('./models/user');
 require('./models/telegramSchedule');
 require('./models/telegramChatTag');
+require('./models/platformCredential');
 
 const app = express();
 // Honor X-Forwarded-* headers from proxy/CDN to get correct protocol/host
@@ -174,9 +175,8 @@ app.post('/connect-facebook', async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'authCode is required' });
     }
 
-    const APP_ID = process.env.FB_APP_ID || process.env.APP_ID;
-    const APP_SECRET = process.env.FB_APP_SECRET || process.env.APP_SECRET;
-    const REDIRECT_URI = process.env.FB_REDIRECT_URI || process.env.REDIRECT_URI;
+    const { getClientCredentials } = require('./services/credentialsService');
+    const { clientId: APP_ID, clientSecret: APP_SECRET, redirectUri: REDIRECT_URI } = await getClientCredentials(req.body?.userId || req.user?.id || null, 'facebook');
 
     if (!APP_ID || !APP_SECRET || !REDIRECT_URI) {
       console.error('Missing Facebook app configuration');

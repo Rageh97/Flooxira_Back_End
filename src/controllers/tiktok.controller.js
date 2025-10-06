@@ -1,10 +1,7 @@
 const TikTokAccount = require('../models/tiktokAccount');
 const crypto = require('../utils/crypto');
 
-// TikTok API configuration
-const TIKTOK_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
-const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
-const TIKTOK_REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI || 'http://localhost:4000/auth/tiktok/callback';
+// Resolve per-user credentials during requests
 
 // Exchange TikTok OAuth code for access token
 async function exchangeCode(req, res) {
@@ -17,6 +14,10 @@ async function exchangeCode(req, res) {
     
     console.log('Exchanging TikTok OAuth code for access token...');
     
+    // Resolve per-user TikTok app credentials
+    const { getClientCredentials } = require('../services/credentialsService');
+    const { clientId: TIKTOK_CLIENT_KEY, clientSecret: TIKTOK_CLIENT_SECRET, redirectUri: TIKTOK_REDIRECT_URI } = await getClientCredentials(req.userId, 'tiktok');
+
     // Exchange code for access token
     const tokenResponse = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
       method: 'POST',

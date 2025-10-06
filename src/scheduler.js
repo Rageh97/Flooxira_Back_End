@@ -702,10 +702,12 @@ async function tryPublishToYouTube(post, account) {
       return null;
     }
 
+    const { getClientCredentials } = require('./services/credentialsService');
+    const { clientId, clientSecret, redirectUri } = await getClientCredentials(post.userId, 'youtube');
     const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/youtube/callback`
+      clientId || process.env.GOOGLE_CLIENT_ID,
+      clientSecret || process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri || process.env.GOOGLE_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/youtube/callback`
     );
     oauth2Client.setCredentials({
       access_token: account.accessToken,
@@ -1073,7 +1075,7 @@ async function tryPublishToPinterest(post, account) {
           headers: { 
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
-            'X-Pinterest-Client-Id': String(process.env.PINTEREST_APP_ID || '')
+            'X-Pinterest-Client-Id': String((await require('./services/credentialsService').getClientCredentials(post.userId, 'pinterest')).clientId || '')
           },
           body: JSON.stringify(pinData),
           timeout: 30000
@@ -1089,7 +1091,7 @@ async function tryPublishToPinterest(post, account) {
               method: 'POST',
               headers: { 
                 'Content-Type': 'application/x-www-form-urlencoded',
-                'Authorization': `Basic ${Buffer.from(`${process.env.PINTEREST_APP_ID}:${process.env.PINTEREST_APP_SECRET}`).toString('base64')}`
+                'Authorization': `Basic ${Buffer.from(`${(await require('./services/credentialsService').getClientCredentials(post.userId, 'pinterest')).clientId}:${(await require('./services/credentialsService').getClientCredentials(post.userId, 'pinterest')).clientSecret}`).toString('base64')}`
               },
               body: new URLSearchParams({
                 grant_type: 'refresh_token',
@@ -1116,7 +1118,7 @@ async function tryPublishToPinterest(post, account) {
                 headers: { 
                   'Authorization': `Bearer ${accessToken}`,
                   'Content-Type': 'application/json',
-                  'X-Pinterest-Client-Id': String(process.env.PINTEREST_APP_ID || '')
+                  'X-Pinterest-Client-Id': String((await require('./services/credentialsService').getClientCredentials(post.userId, 'pinterest')).clientId || '')
                 },
                 body: JSON.stringify(pinData),
                 timeout: 30000

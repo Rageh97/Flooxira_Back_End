@@ -34,17 +34,21 @@ async function exchangeCode(req, res) {
     
     console.log('Exchanging Pinterest OAuth code:', code);
     
-    // Exchange code for access token
+    // Resolve client credentials for this user
+    const { getClientCredentials } = require('../services/credentialsService');
+    const { clientId, clientSecret, redirectUri } = await getClientCredentials(req.userId, 'pinterest');
+
+    // Exchange code for access token using per-user app credentials
     const tokenResponse = await fetch('https://api.pinterest.com/v5/oauth/token', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(`${process.env.PINTEREST_APP_ID}:${process.env.PINTEREST_APP_SECRET}`).toString('base64')}`
+        'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`
       },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code: code,
-        redirect_uri: process.env.PINTEREST_REDIRECT_URI
+        redirect_uri: redirectUri
       })
     });
     
@@ -200,11 +204,13 @@ async function getBoards(req, res) {
     if (response && response.status === 401 && account.refreshToken) {
       try {
         const rt = crypto.decrypt(account.refreshToken);
+        const { getClientCredentials } = require('../services/credentialsService');
+        const { clientId, clientSecret } = await getClientCredentials(req.userId, 'pinterest');
         const tokenResp = await fetch('https://api.pinterest.com/v5/oauth/token', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Authorization': `Basic ${Buffer.from(`${process.env.PINTEREST_APP_ID}:${process.env.PINTEREST_APP_SECRET}`).toString('base64')}`
+            'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`
           },
           body: new URLSearchParams({
             grant_type: 'refresh_token',
@@ -470,11 +476,13 @@ async function refreshToken(req, res) {
     const refreshToken = crypto.decrypt(account.refreshToken);
     
     // Refresh the access token
+    const { getClientCredentials: getCreds } = require('../services/credentialsService');
+    const { clientId: cid, clientSecret: csec } = await getCreds(req.userId, 'pinterest');
     const tokenResponse = await fetch('https://api.pinterest.com/v5/oauth/token', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(`${process.env.PINTEREST_APP_ID}:${process.env.PINTEREST_APP_SECRET}`).toString('base64')}`
+        'Authorization': `Basic ${Buffer.from(`${cid}:${csec}`).toString('base64')}`
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',

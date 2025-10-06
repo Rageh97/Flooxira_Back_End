@@ -789,13 +789,15 @@ async function exchangeCode(req, res) {
     console.log('Exchanging Facebook OAuth code:', code);
     
     // Exchange code for access token
+    const { getClientCredentials } = require('../services/credentialsService');
+    const { clientId: fbId, clientSecret: fbSecret, redirectUri: fbRedirect } = await getClientCredentials(req.userId, 'facebook');
     const tokenResponse = await fetch('https://graph.facebook.com/v21.0/oauth/access_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: process.env.FB_APP_ID,
-        client_secret: process.env.FB_APP_SECRET,
-        redirect_uri: process.env.FB_REDIRECT_URI,
+        client_id: fbId,
+        client_secret: fbSecret,
+        redirect_uri: fbRedirect,
         code: code
       })
     });
@@ -811,7 +813,7 @@ async function exchangeCode(req, res) {
     
     // Get long-lived token - FIXED: Use query parameters instead of body for GET request
     const longLivedResponse = await fetch(
-      `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${process.env.FB_APP_ID}&client_secret=${process.env.FB_APP_SECRET}&fb_exchange_token=${tokenData.access_token}`
+      `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${fbId}&client_secret=${fbSecret}&fb_exchange_token=${tokenData.access_token}`
     );
     
     const longLivedData = await longLivedResponse.json();

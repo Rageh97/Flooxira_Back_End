@@ -10,9 +10,8 @@ async function exchangeCode(req, res) {
       return res.status(400).json({ message: 'twitter code is required' });
     }
 
-    const clientId = process.env.TWITTER_CLIENT_ID;
-    const clientSecret = process.env.TWITTER_CLIENT_SECRET;
-    const redirectUri = process.env.TWITTER_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/twitter/callback`;
+    const { getClientCredentials } = require('../services/credentialsService');
+    const { clientId, clientSecret, redirectUri } = await getClientCredentials(userId, 'twitter');
 
     if (!clientId) {
       return res.status(500).json({ message: 'Twitter integration not configured' });

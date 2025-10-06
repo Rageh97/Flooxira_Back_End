@@ -63,6 +63,10 @@ async function exchangeCode(req, res) {
 
     console.log('Exchanging LinkedIn OAuth code for access token...');
 
+    // Resolve per-user LinkedIn app credentials
+    const { getClientCredentials } = require('../services/credentialsService');
+    const { clientId: LINKEDIN_CLIENT_ID, clientSecret: LINKEDIN_CLIENT_SECRET, redirectUri: LINKEDIN_REDIRECT_URI } = await getClientCredentials(userId, 'linkedin');
+
     // Exchange code for access token
     const tokenResponse = await fetchWithRetry('https://www.linkedin.com/oauth/v2/accessToken', {
       method: 'POST',

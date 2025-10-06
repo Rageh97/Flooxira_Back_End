@@ -1,12 +1,18 @@
 const { google } = require('googleapis');
 const YouTubeAccount = require('../models/youtubeAccount');
 
-function getOAuthClient() {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/youtube/callback`;
-  if (!clientId || !clientSecret) throw new Error('YouTube not configured');
-  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+function getOAuthClient(userId) {
+  const { getClientCredentials } = require('../services/credentialsService');
+  const envClientId = process.env.GOOGLE_CLIENT_ID;
+  const envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const envRedirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/youtube/callback`;
+  // Build with env first; we will override per request if DB creds exist
+  const client = new google.auth.OAuth2(envClientId, envClientSecret, envRedirectUri);
+  client._getPerUserCreds = async () => {
+    const { clientId, clientSecret, redirectUri } = await getClientCredentials(userId, 'youtube');
+    return { clientId: clientId || envClientId, clientSecret: clientSecret || envClientSecret, redirectUri: redirectUri || envRedirectUri };
+  };
+  return client;
 }
 
 async function exchangeCode(req, res) {
@@ -14,7 +20,11 @@ async function exchangeCode(req, res) {
     const { code } = req.body;
     if (!code) return res.status(400).json({ message: 'Missing code' });
 
-    const oauth2Client = getOAuthClient();
+    const oauth2Client = getOAuthClient(req.userId);
+    const per = await oauth2Client._getPerUserCreds();
+    oauth2Client._clientId = per.clientId;
+    oauth2Client._clientSecret = per.clientSecret;
+    oauth2Client.redirectUri = per.redirectUri;
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
 
@@ -105,7 +115,11 @@ async function getYouTubeChannels(req, res) {
     const account = await YouTubeAccount.findOne({ where: { userId: req.userId } });
     if (!account) return res.status(404).json({ message: 'No YouTube account connected' });
     
-    const oauth2Client = getOAuthClient();
+    const oauth2Client = getOAuthClient(req.userId);
+    const per = await oauth2Client._getPerUserCreds();
+    oauth2Client._clientId = per.clientId;
+    oauth2Client._clientSecret = per.clientSecret;
+    oauth2Client.redirectUri = per.redirectUri;
     oauth2Client.setCredentials({
       access_token: account.accessToken,
       refresh_token: account.refreshToken
