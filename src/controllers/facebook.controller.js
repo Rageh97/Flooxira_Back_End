@@ -825,11 +825,20 @@ async function exchangeCode(req, res) {
     
     console.log('Long-lived token received, getting user info...');
     
-    // Get user info
-    const userResponse = await fetch(
+    // Get user info - try with email first, fallback to id,name only if email fails
+    let userResponse = await fetch(
       `https://graph.facebook.com/v21.0/me?fields=id,name,email&access_token=${longLivedData.access_token}`
     );
-    const userData = await userResponse.json();
+    let userData = await userResponse.json();
+    
+    // If email field fails (e.g., for Pages), retry without email
+    if (userData.error && userData.error.code === 100 && userData.error.message.includes('email')) {
+      console.log('Email field not available, retrying without email field...');
+      userResponse = await fetch(
+        `https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${longLivedData.access_token}`
+      );
+      userData = await userResponse.json();
+    }
     
     if (userData.error) {
       return res.status(400).json({ message: userData.error.message });
@@ -847,7 +856,7 @@ async function exchangeCode(req, res) {
         userId: req.userId,
         fbUserId: userData.id,
         name: userData.name,
-        email: userData.email,
+        email: userData.email || null, // Handle case where email is not available
         accessToken: encryptedToken,
         tokenExpiresAt: longLivedData.expires_in ? new Date(Date.now() + longLivedData.expires_in * 1000) : null
       }
@@ -856,7 +865,7 @@ async function exchangeCode(req, res) {
     if (!created) {
       account.fbUserId = userData.id;
       account.name = userData.name;
-      account.email = userData.email;
+      account.email = userData.email || null; // Handle case where email is not available
       account.accessToken = encryptedToken;
       account.tokenExpiresAt = longLivedData.expires_in ? new Date(Date.now() + longLivedData.expires_in * 1000) : null;
       await account.save();
