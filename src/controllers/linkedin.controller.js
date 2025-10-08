@@ -319,7 +319,8 @@ async function testLinkedInConnection(req, res) {
       return res.json({ ok: false, message: 'LinkedIn not connected' });
     }
 
-    const accessToken = crypto.decrypt(account.accessToken);
+    // LinkedIn tokens are not encrypted, use directly
+    const accessToken = account.accessToken;
     
     console.log('Testing LinkedIn connection...');
     
@@ -373,7 +374,8 @@ async function createLinkedInPost(req, res) {
       return res.status(400).json({ message: 'LinkedIn not connected' });
     }
 
-    const accessToken = crypto.decrypt(account.accessToken);
+    // LinkedIn tokens are not encrypted, use directly
+    const accessToken = account.accessToken;
 
     // Get the user's LinkedIn ID for the author URN
     let personUrn = null;
@@ -476,7 +478,8 @@ async function getLinkedInPosts(req, res) {
       return res.status(400).json({ message: 'LinkedIn not connected' });
     }
 
-    const accessToken = crypto.decrypt(account.accessToken);
+    // LinkedIn tokens are not encrypted, use directly
+    const accessToken = account.accessToken;
 
     // Get user's profile URN
     let personUrn = null;
@@ -556,7 +559,8 @@ async function getLinkedInAnalytics(req, res) {
       return res.status(400).json({ message: 'LinkedIn not connected' });
     }
 
-    const accessToken = crypto.decrypt(account.accessToken);
+    // LinkedIn tokens are not encrypted, use directly
+    const accessToken = account.accessToken;
 
     // Get user's profile URN
     const profileResponse = await fetch('https://api.linkedin.com/v2/people/~', {
@@ -615,7 +619,8 @@ async function getLinkedInCompanies(req, res) {
       return res.status(400).json({ message: 'LinkedIn not connected' });
     }
 
-    const accessToken = crypto.decrypt(account.accessToken);
+    // LinkedIn tokens are not encrypted, use directly
+    const accessToken = account.accessToken;
 
     // Get user's admin companies
     const companiesResponse = await fetch('https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED', {
@@ -662,7 +667,8 @@ async function createLinkedInPostWithImage(req, res) {
       return res.status(400).json({ message: 'LinkedIn not connected' });
     }
 
-    const accessToken = crypto.decrypt(account.accessToken);
+    // LinkedIn tokens are not encrypted, use directly
+    const accessToken = account.accessToken;
 
     // Get the user's LinkedIn ID for the author URN
     let personUrn = null;

@@ -22,6 +22,7 @@ async function getFacebookAnalytics(req, res) {
     // Get page insights - Real data from user's connected Facebook page
     try {
       console.log(`[Analytics] Fetching Facebook insights for user ${userId}, page ${account.pageId}`);
+      // Use only valid Facebook insights metrics
       const insightsResponse = await fetch(
         `https://graph.facebook.com/v21.0/${account.pageId}/insights?metric=page_fans,page_impressions,page_engaged_users&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
       );
@@ -381,7 +382,7 @@ async function getAllAnalytics(req, res) {
         console.log(`[Analytics] Fetching Facebook analytics for user ${userId}, page ${facebookAccount.pageId}`);
         const token = crypto.decrypt(facebookAccount.accessToken);
         
-        // Get page insights
+        // Get page insights - Use only valid Facebook insights metrics
         const insightsResponse = await fetch(
           `https://graph.facebook.com/v21.0/${facebookAccount.pageId}/insights?metric=page_fans,page_impressions,page_engaged_users&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
         );
@@ -395,7 +396,15 @@ async function getAllAnalytics(req, res) {
           };
           console.log(`[Analytics] Facebook analytics fetched for user ${userId}:`, insightsData.data?.length || 0, 'metrics');
         } else {
-          console.log(`[Analytics] Facebook analytics error for user ${userId}:`, await insightsResponse.json());
+          const errorData = await insightsResponse.json();
+          console.log(`[Analytics] Facebook analytics error for user ${userId}:`, errorData);
+          // Still set facebook object but with empty insights
+          analytics.facebook = {
+            insights: [],
+            pageId: facebookAccount.pageId,
+            hasInstagram: !!facebookAccount.instagramId,
+            error: errorData.message || 'Failed to fetch insights'
+          };
         }
       } else {
         console.log(`[Analytics] No Facebook account found for user ${userId}`);
@@ -411,19 +420,27 @@ async function getAllAnalytics(req, res) {
         console.log(`[Analytics] Fetching LinkedIn analytics for user ${userId}`);
         const token = linkedinAccount.accessToken; // LinkedIn tokens are not encrypted
         
-        const networkResponse = await fetch(
-          `https://api.linkedin.com/v2/networkSizes/edge=1?edgeType=CompanyFollowedByMember&q=viewer&access_token=${token}`
+        // First try to get profile info
+        const profileResponse = await fetch(
+          `https://api.linkedin.com/v2/people/~?projection=(id,firstName,lastName)&access_token=${token}`
         );
         
-        if (networkResponse.ok) {
-          const networkData = await networkResponse.json();
+        if (profileResponse.ok) {
+          const profileData = await profileResponse.json();
           analytics.linkedin = {
-            network: networkData,
+            profile: profileData,
             name: linkedinAccount.name
           };
-          console.log(`[Analytics] LinkedIn analytics fetched for user ${userId}:`, networkData);
+          console.log(`[Analytics] LinkedIn profile fetched for user ${userId}:`, profileData.firstName, profileData.lastName);
         } else {
-          console.log(`[Analytics] LinkedIn analytics error for user ${userId}:`, await networkResponse.json());
+          const errorData = await profileResponse.json();
+          console.log(`[Analytics] LinkedIn analytics error for user ${userId}:`, errorData);
+          // Still set linkedin object but with error info
+          analytics.linkedin = {
+            profile: null,
+            name: linkedinAccount.name,
+            error: errorData.message || 'Failed to fetch profile'
+          };
         }
       } else {
         console.log(`[Analytics] No LinkedIn account found for user ${userId}`);
