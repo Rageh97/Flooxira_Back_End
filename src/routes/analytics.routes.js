@@ -10,7 +10,8 @@ const {
   getAllAnalytics,
   switchFacebookPage,
   getAvailableFacebookPages,
-  getCurrentFacebookPage
+  getCurrentFacebookPage,
+  getInstagramAccountInfo
 } = require('../controllers/analytics.controller');
 
 // Get all analytics
@@ -39,6 +40,9 @@ router.get('/facebook/pages', requireAuth, getAvailableFacebookPages);
 
 // Get current Facebook page
 router.get('/facebook/current', requireAuth, getCurrentFacebookPage);
+
+// Get Instagram account info
+router.get('/instagram/account', requireAuth, getInstagramAccountInfo);
 
 module.exports = router;
 

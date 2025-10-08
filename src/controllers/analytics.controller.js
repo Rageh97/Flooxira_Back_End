@@ -88,9 +88,16 @@ async function getFacebookAnalytics(req, res) {
           const accountData = await accountResponse.json();
           analytics.instagram = {
             account: accountData,
-            username: account.instagramUsername
+            username: account.instagramUsername || accountData.username
           };
           console.log(`[Analytics] Instagram account info fetched for user ${userId}:`, accountData.username);
+        } else {
+          // If account info fails, still create basic Instagram object
+          analytics.instagram = {
+            account: { id: account.instagramId },
+            username: account.instagramUsername || 'Unknown'
+          };
+          console.log(`[Analytics] Instagram account info failed for user ${userId}, using basic info`);
         }
         
         // Get Instagram insights
@@ -124,7 +131,12 @@ async function getFacebookAnalytics(req, res) {
         console.log(`[Analytics] Instagram insights fetched for user ${userId}:`, instagramInsights.length, 'metrics');
       } catch (error) {
         console.log('Instagram insights error:', error.message);
-        analytics.instagram = { error: error.message };
+        // Still create basic Instagram object even if insights fail
+        analytics.instagram = {
+          account: { id: account.instagramId },
+          username: account.instagramUsername || 'Unknown',
+          error: error.message
+        };
       }
     }
 
@@ -151,7 +163,7 @@ async function getLinkedInAnalytics(req, res) {
       return res.status(404).json({ message: 'No LinkedIn account connected' });
     }
 
-    const token = account.accessToken; // LinkedIn tokens are not encrypted
+    const token = crypto.decrypt(account.accessToken); // LinkedIn tokens are encrypted
     const analytics = {};
 
     // Get profile stats - Real data from user's connected LinkedIn account
@@ -224,6 +236,7 @@ async function getTwitterAnalytics(req, res) {
       return res.status(404).json({ message: 'No Twitter account connected' });
     }
 
+    const token = crypto.decrypt(account.accessToken);
     const analytics = {};
 
     // Get user info - Real data from user's connected Twitter account
@@ -233,7 +246,7 @@ async function getTwitterAnalytics(req, res) {
         `https://api.twitter.com/2/users/me?user.fields=public_metrics`,
         {
           headers: {
-            'Authorization': `Bearer ${account.accessToken}`,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         }
@@ -259,7 +272,7 @@ async function getTwitterAnalytics(req, res) {
         `https://api.twitter.com/2/users/${account.twitterUserId}/tweets?tweet.fields=public_metrics,created_at&max_results=10`,
         {
           headers: {
-            'Authorization': `Bearer ${account.accessToken}`,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         }
@@ -312,8 +325,8 @@ async function getYouTubeAnalytics(req, res) {
     );
     
     oauth2Client.setCredentials({
-      access_token: account.accessToken,
-      refresh_token: account.refreshToken
+      access_token: crypto.decrypt(account.accessToken),
+      refresh_token: account.refreshToken ? crypto.decrypt(account.refreshToken) : null
     });
     
     const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
@@ -760,6 +773,42 @@ async function getCurrentFacebookPage(req, res) {
   }
 }
 
+// Get Instagram account info
+async function getInstagramAccountInfo(req, res) {
+  try {
+    const userId = req.userId;
+    const account = await FacebookAccount.findOne({ where: { userId } });
+    
+    if (!account || !account.accessToken || !account.instagramId) {
+      return res.status(404).json({ message: 'No Instagram account connected' });
+    }
+    
+    const token = crypto.decrypt(account.accessToken);
+    
+    // Get Instagram account info
+    const accountResponse = await fetch(
+      `https://graph.facebook.com/v21.0/${account.instagramId}?fields=id,username,media_count,followers_count,follows_count&access_token=${token}`
+    );
+    
+    if (accountResponse.ok) {
+      const accountData = await accountResponse.json();
+      return res.json({
+        success: true,
+        account: accountData,
+        username: account.instagramUsername || accountData.username,
+        followersCount: accountData.followers_count || 0,
+        followingCount: accountData.follows_count || 0,
+        mediaCount: accountData.media_count || 0
+      });
+    } else {
+      return res.status(400).json({ message: 'Failed to fetch Instagram account info' });
+    }
+  } catch (error) {
+    console.error('Get Instagram account info error:', error);
+    return res.status(500).json({ message: 'Failed to get Instagram account info', error: error.message });
+  }
+}
+
 module.exports = {
   getFacebookAnalytics,
   getLinkedInAnalytics,
@@ -769,5 +818,6 @@ module.exports = {
   getAllAnalytics,
   switchFacebookPage,
   getAvailableFacebookPages,
-  getCurrentFacebookPage
+  getCurrentFacebookPage,
+  getInstagramAccountInfo
 };
