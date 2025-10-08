@@ -825,28 +825,34 @@ async function exchangeCode(req, res) {
     
     console.log('Long-lived token received, getting user info...');
     
-    // Get user info - try with email first, fallback to id,name only if email fails
+    // Get user info - start with basic fields only to avoid Page token issues
     let userResponse = await fetch(
-      `https://graph.facebook.com/v21.0/me?fields=id,name,email&access_token=${longLivedData.access_token}`
+      `https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${longLivedData.access_token}`
     );
     let userData = await userResponse.json();
     
-    // If email field fails (e.g., for Pages), retry without email
-    if (userData.error && userData.error.code === 100 && userData.error.message.includes('email')) {
-      console.log('Email field not available, retrying without email field...');
-      userResponse = await fetch(
-        `https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${longLivedData.access_token}`
-      );
-      userData = await userResponse.json();
-    }
-    
-    // If still error, try with just id field
+    // If basic fields fail, try with just id
     if (userData.error) {
-      console.log('Name field also not available, trying with id only...');
+      console.log('Basic fields not available, trying with id only...');
       userResponse = await fetch(
         `https://graph.facebook.com/v21.0/me?fields=id&access_token=${longLivedData.access_token}`
       );
       userData = await userResponse.json();
+    }
+    
+    // Try to get email separately if needed (only for user tokens, not page tokens)
+    if (!userData.error && !userData.email) {
+      try {
+        const emailResponse = await fetch(
+          `https://graph.facebook.com/v21.0/me?fields=email&access_token=${longLivedData.access_token}`
+        );
+        const emailData = await emailResponse.json();
+        if (!emailData.error && emailData.email) {
+          userData.email = emailData.email;
+        }
+      } catch (emailError) {
+        console.log('Email field not available for this token type');
+      }
     }
     
     if (userData.error) {
@@ -1362,6 +1368,106 @@ async function selectInstagramAccount(req, res) {
   }
 }
 
+// Get all connected accounts info
+async function getConnectedAccounts(req, res) {
+  try {
+    const userId = req.userId;
+    const connectedAccounts = {};
+
+    // Get Facebook account
+    try {
+      const facebookAccount = await FacebookAccount.findOne({ where: { userId } });
+      if (facebookAccount && facebookAccount.accessToken) {
+        const token = crypto.decrypt(facebookAccount.accessToken);
+        
+        // Get page info
+        try {
+          const pageResponse = await fetch(
+            `https://graph.facebook.com/v21.0/${facebookAccount.pageId}?fields=name,id&access_token=${token}`
+          );
+          if (pageResponse.ok) {
+            const pageData = await pageResponse.json();
+            connectedAccounts.facebook = {
+              name: pageData.name,
+              id: pageData.id,
+              type: 'page'
+            };
+          }
+        } catch (error) {
+          console.log('Facebook page info error:', error.message);
+        }
+      }
+    } catch (error) {
+      console.log('Facebook account error:', error.message);
+    }
+
+    // Get LinkedIn account
+    try {
+      const linkedinAccount = await LinkedInAccount.findOne({ where: { userId } });
+      if (linkedinAccount && linkedinAccount.accessToken) {
+        connectedAccounts.linkedin = {
+          name: linkedinAccount.name,
+          id: linkedinAccount.linkedinId,
+          type: 'profile'
+        };
+      }
+    } catch (error) {
+      console.log('LinkedIn account error:', error.message);
+    }
+
+    // Get Twitter account
+    try {
+      const twitterAccount = await TwitterAccount.findOne({ where: { userId } });
+      if (twitterAccount && twitterAccount.accessToken) {
+        connectedAccounts.twitter = {
+          name: twitterAccount.username,
+          id: twitterAccount.twitterUserId,
+          type: 'profile'
+        };
+      }
+    } catch (error) {
+      console.log('Twitter account error:', error.message);
+    }
+
+    // Get YouTube account
+    try {
+      const youtubeAccount = await YouTubeAccount.findOne({ where: { userId } });
+      if (youtubeAccount && youtubeAccount.accessToken) {
+        connectedAccounts.youtube = {
+          name: youtubeAccount.channelTitle,
+          id: youtubeAccount.channelId,
+          type: 'channel'
+        };
+      }
+    } catch (error) {
+      console.log('YouTube account error:', error.message);
+    }
+
+    // Get Pinterest account
+    try {
+      const pinterestAccount = await PinterestAccount.findOne({ where: { userId } });
+      if (pinterestAccount && pinterestAccount.accessToken) {
+        connectedAccounts.pinterest = {
+          name: pinterestAccount.username,
+          id: pinterestAccount.pinterestUserId,
+          type: 'profile'
+        };
+      }
+    } catch (error) {
+      console.log('Pinterest account error:', error.message);
+    }
+
+    return res.json({
+      success: true,
+      connectedAccounts: connectedAccounts,
+      totalConnected: Object.keys(connectedAccounts).length
+    });
+  } catch (error) {
+    console.error('Connected accounts error:', error);
+    return res.status(500).json({ message: 'Failed to get connected accounts', error: error.message });
+  }
+}
+
 module.exports = {
   getFacebookAccount,
   getFacebookPages,
@@ -1372,7 +1478,8 @@ module.exports = {
   getInstagramAccounts,
   selectInstagramAccount,
   testFacebookConnection,
-  disconnectFacebook
+  disconnectFacebook,
+  getConnectedAccounts
 };
 
 

@@ -14,7 +14,8 @@ const {
   getInstagramAccounts,
   selectInstagramAccount,
   testFacebookConnection,
-  disconnectFacebook
+  disconnectFacebook,
+  getConnectedAccounts
 } = require('../controllers/facebook.controller');
 
 const router = Router();
@@ -51,6 +52,9 @@ router.post('/select-instagram', selectInstagramAccount);
 
 // Disconnect Facebook account
 router.post('/disconnect', disconnectFacebook);
+
+// Get all connected accounts
+router.get('/connected-accounts', getConnectedAccounts);
 
 module.exports = router;
 
