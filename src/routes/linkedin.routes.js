@@ -46,6 +46,9 @@ router.get('/analytics', getLinkedInAnalytics);
 // Company pages (if user has admin access)
 router.get('/companies', getLinkedInCompanies);
 
+// Platform details routes
+router.get('/profile', getLinkedInAnalytics);
+
 module.exports = router;
 
 

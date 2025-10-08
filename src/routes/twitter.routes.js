@@ -12,5 +12,8 @@ router.post('/exchange', requireAuth, requireActiveSubscription, requirePlatform
 router.post('/disconnect', requireAuth, requireActiveSubscription, requirePlatformAccess('twitter'), controller.disconnect);
 router.post('/tweet', requireAuth, requireActiveSubscription, requirePlatformAccess('twitter'), controller.createTweet);
 
+// Platform details routes
+router.get('/account', requireAuth, requireActiveSubscription, requirePlatformAccess('twitter'), controller.getAccount);
+
 module.exports = router;
 

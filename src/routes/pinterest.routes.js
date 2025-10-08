@@ -46,4 +46,7 @@ router.post('/refresh-token', refreshToken);
 // Disconnect Pinterest account
 router.post('/disconnect', disconnectPinterest);
 
+// Platform details routes
+router.get('/account', getPinterestAccount);
+
 module.exports = router;

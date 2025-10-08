@@ -119,5 +119,42 @@ async function createTweet(req, res) {
   }
 }
 
-module.exports = { exchangeCode, disconnect, createTweet };
+async function getAccount(req, res) {
+  try {
+    const userId = req.user.id;
+    const account = await TwitterAccount.findOne({ where: { userId } });
+    
+    if (!account) {
+      return res.status(404).json({ message: 'No Twitter account connected' });
+    }
+
+    const crypto = require('../utils/crypto');
+    const token = crypto.decrypt(account.accessToken);
+    
+    const userResponse = await axios.get(
+      `https://api.twitter.com/2/users/me?user.fields=public_metrics`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    if (userResponse.data?.data) {
+      return res.json({
+        success: true,
+        metrics: userResponse.data.data.public_metrics || {},
+        username: account.username
+      });
+    } else {
+      return res.status(400).json({ message: 'Failed to fetch account details' });
+    }
+  } catch (error) {
+    console.error('Twitter getAccount error:', error);
+    return res.status(500).json({ message: 'Failed to get account details', error: error.message });
+  }
+}
+
+module.exports = { exchangeCode, disconnect, createTweet, getAccount };
 

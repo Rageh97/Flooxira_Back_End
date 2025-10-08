@@ -25,6 +25,9 @@ router.post('/disconnect', disconnectYouTube);
 router.get('/channels', getYouTubeChannels);
 router.post('/select-channel', selectYouTubeChannel);
 
+// Platform details routes
+router.get('/channel', getYouTubeAccount);
+
 module.exports = router;
 
 

@@ -56,6 +56,13 @@ router.post('/disconnect', disconnectFacebook);
 // Get all connected accounts
 router.get('/connected-accounts', getConnectedAccounts);
 
+// Platform details routes
+router.get('/current-page', getFacebookAccount);
+router.get('/pages', getFacebookPages);
+
+// Instagram details
+router.get('/instagram/account', getInstagramAccounts);
+
 module.exports = router;
 
 
