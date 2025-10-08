@@ -41,18 +41,23 @@ async function tryPublishNow(post) {
       
       if (account && account.accessToken) {
         // Handle Instagram posting if enabled
-        if (post.platforms.includes('instagram') && account.instagramId) {
-          try {
-            const instagramResult = await tryPublishToInstagram(post, account);
-            if (instagramResult) {
-              post.instagramPostId = instagramResult.id;
-              publishResults.instagram = instagramResult;
-              publishedToAny = true;
-              console.log('Instagram post published successfully');
+        if (post.platforms.includes('instagram')) {
+          if (account.instagramId) {
+            try {
+              const instagramResult = await tryPublishToInstagram(post, account);
+              if (instagramResult) {
+                post.instagramPostId = instagramResult.id;
+                publishResults.instagram = instagramResult;
+                publishedToAny = true;
+                console.log('Instagram post published successfully');
+              }
+            } catch (instagramError) {
+              console.error('Instagram publishing failed:', instagramError.message);
+              publishResults.instagram = { error: instagramError.message };
             }
-          } catch (instagramError) {
-            console.error('Instagram publishing failed:', instagramError.message);
-            publishResults.instagram = { error: instagramError.message };
+          } else {
+            console.log('No Instagram account connected to Facebook page');
+            publishResults.instagram = { error: 'No Instagram account connected to Facebook page' };
           }
         }
         
@@ -73,9 +78,11 @@ async function tryPublishNow(post) {
         }
       } else {
         console.log('No Facebook account found for user:', post.userId);
-        if (post.platforms.includes('facebook') || post.platforms.includes('instagram')) {
+        if (post.platforms.includes('facebook')) {
           publishResults.facebook = { error: 'No Facebook account connected' };
-          publishResults.instagram = { error: 'No Facebook account connected' };
+        }
+        if (post.platforms.includes('instagram')) {
+          publishResults.instagram = { error: 'No Facebook account connected. Instagram requires a connected Facebook page.' };
         }
       }
     }
@@ -106,17 +113,26 @@ async function tryPublishNow(post) {
     if (post.platforms.includes('youtube')) {
       const ytAccount = await YouTubeAccount.findOne({ where: { userId: post.userId } });
       if (ytAccount && ytAccount.accessToken) {
-        try {
-          const ytResult = await tryPublishToYouTube(post, ytAccount);
-          if (ytResult) {
-            post.youtubeVideoId = ytResult.id;
-            publishResults.youtube = ytResult;
-            publishedToAny = true;
-            console.log('Post published to YouTube successfully');
+        // Check if post type is video for YouTube
+        if (post.type !== 'video') {
+          console.log('YouTube requires video content, skipping photo/text post');
+          publishResults.youtube = { error: 'YouTube requires video content. Please upload a video file.' };
+        } else if (!post.mediaUrl) {
+          console.log('YouTube requires media URL for video');
+          publishResults.youtube = { error: 'YouTube requires a video file to be uploaded.' };
+        } else {
+          try {
+            const ytResult = await tryPublishToYouTube(post, ytAccount);
+            if (ytResult) {
+              post.youtubeVideoId = ytResult.id;
+              publishResults.youtube = ytResult;
+              publishedToAny = true;
+              console.log('Post published to YouTube successfully');
+            }
+          } catch (youtubeError) {
+            console.error('YouTube publishing failed:', youtubeError.message);
+            publishResults.youtube = { error: youtubeError.message };
           }
-        } catch (youtubeError) {
-          console.error('YouTube publishing failed:', youtubeError.message);
-          publishResults.youtube = { error: youtubeError.message };
         }
       } else {
         console.log('No YouTube account found for user:', post.userId);
