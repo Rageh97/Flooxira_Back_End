@@ -19,23 +19,38 @@ async function getFacebookAnalytics(req, res) {
     const token = crypto.decrypt(account.accessToken);
     const analytics = {};
 
-    // Get page insights - Real data from user's connected Facebook page
+    // Get page insights - Enhanced metrics for better analytics
     try {
       console.log(`[Analytics] Fetching Facebook insights for user ${userId}, page ${account.pageId}`);
-      // Use basic metrics that are always available
-      const insightsResponse = await fetch(
-        `https://graph.facebook.com/v21.0/${account.pageId}/insights?metric=page_fans&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
-      );
+      // Get multiple insights separately to avoid API errors
+      const insightsPromises = [
+        // Page fans
+        fetch(`https://graph.facebook.com/v21.0/${account.pageId}/insights?metric=page_fans&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`),
+        // Page impressions
+        fetch(`https://graph.facebook.com/v21.0/${account.pageId}/insights?metric=page_impressions&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`),
+        // Page engaged users
+        fetch(`https://graph.facebook.com/v21.0/${account.pageId}/insights?metric=page_engaged_users&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`)
+      ];
       
-      if (insightsResponse.ok) {
-        const insightsData = await insightsResponse.json();
-        analytics.insights = insightsData.data || [];
-        console.log(`[Analytics] Facebook insights fetched for user ${userId}:`, insightsData.data?.length || 0, 'metrics');
-      } else {
-        const errorData = await insightsResponse.json();
-        console.log(`[Analytics] Facebook insights error for user ${userId}:`, errorData);
-        analytics.insights = [];
+      const insightsResponses = await Promise.allSettled(insightsPromises);
+      const allInsights = [];
+      
+      for (let i = 0; i < insightsResponses.length; i++) {
+        const response = insightsResponses[i];
+        if (response.status === 'fulfilled' && response.value.ok) {
+          try {
+            const data = await response.value.json();
+            if (data.data && data.data.length > 0) {
+              allInsights.push(...data.data);
+            }
+          } catch (error) {
+            console.log(`[Analytics] Error parsing insights ${i}:`, error.message);
+          }
+        }
       }
+      
+      analytics.insights = allInsights;
+      console.log(`[Analytics] Facebook insights fetched for user ${userId}:`, allInsights.length, 'metrics');
     } catch (error) {
       console.log(`[Analytics] Facebook insights error for user ${userId}:`, error.message);
       analytics.insights = [];
@@ -62,16 +77,54 @@ async function getFacebookAnalytics(req, res) {
     // Get Instagram insights if connected
     if (account.instagramId) {
       try {
-        const instagramResponse = await fetch(
-          `https://graph.facebook.com/v21.0/${account.instagramId}/insights?metric=impressions,reach,profile_views&period=day&since=${Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
+        console.log(`[Analytics] Fetching Instagram insights for user ${userId}, account ${account.instagramId}`);
+        
+        // Get Instagram account info first
+        const accountResponse = await fetch(
+          `https://graph.facebook.com/v21.0/${account.instagramId}?fields=id,username,media_count,followers_count,follows_count&access_token=${token}`
         );
         
-        if (instagramResponse.ok) {
-          const instagramData = await instagramResponse.json();
-          analytics.instagram = instagramData.data || [];
+        if (accountResponse.ok) {
+          const accountData = await accountResponse.json();
+          analytics.instagram = {
+            account: accountData,
+            username: account.instagramUsername
+          };
+          console.log(`[Analytics] Instagram account info fetched for user ${userId}:`, accountData.username);
         }
+        
+        // Get Instagram insights
+        const insightsPromises = [
+          fetch(`https://graph.facebook.com/v21.0/${account.instagramId}/insights?metric=impressions&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`),
+          fetch(`https://graph.facebook.com/v21.0/${account.instagramId}/insights?metric=reach&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`),
+          fetch(`https://graph.facebook.com/v21.0/${account.instagramId}/insights?metric=profile_views&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`)
+        ];
+        
+        const insightsResponses = await Promise.allSettled(insightsPromises);
+        const instagramInsights = [];
+        
+        for (let i = 0; i < insightsResponses.length; i++) {
+          const response = insightsResponses[i];
+          if (response.status === 'fulfilled' && response.value.ok) {
+            try {
+              const data = await response.value.json();
+              if (data.data && data.data.length > 0) {
+                instagramInsights.push(...data.data);
+              }
+            } catch (error) {
+              console.log(`[Analytics] Error parsing Instagram insights ${i}:`, error.message);
+            }
+          }
+        }
+        
+        if (analytics.instagram) {
+          analytics.instagram.insights = instagramInsights;
+        }
+        
+        console.log(`[Analytics] Instagram insights fetched for user ${userId}:`, instagramInsights.length, 'metrics');
       } catch (error) {
         console.log('Instagram insights error:', error.message);
+        analytics.instagram = { error: error.message };
       }
     }
 
@@ -600,11 +653,121 @@ async function getAllAnalytics(req, res) {
   }
 }
 
+// Switch Facebook page
+async function switchFacebookPage(req, res) {
+  try {
+    const userId = req.userId;
+    const { pageId, pageName } = req.body;
+    
+    if (!pageId || !pageName) {
+      return res.status(400).json({ message: 'pageId and pageName are required' });
+    }
+    
+    const account = await FacebookAccount.findOne({ where: { userId } });
+    if (!account) {
+      return res.status(404).json({ message: 'No Facebook account connected' });
+    }
+    
+    // Update the page ID and name
+    account.pageId = pageId;
+    account.pageName = pageName;
+    await account.save();
+    
+    console.log(`[Analytics] Facebook page switched for user ${userId}: ${pageName} (${pageId})`);
+    
+    return res.json({
+      success: true,
+      message: 'Facebook page switched successfully',
+      pageId: pageId,
+      pageName: pageName
+    });
+  } catch (error) {
+    console.error('Switch Facebook page error:', error);
+    return res.status(500).json({ message: 'Failed to switch Facebook page', error: error.message });
+  }
+}
+
+// Get available Facebook pages
+async function getAvailableFacebookPages(req, res) {
+  try {
+    const userId = req.userId;
+    const account = await FacebookAccount.findOne({ where: { userId } });
+    
+    if (!account || !account.accessToken) {
+      return res.status(404).json({ message: 'No Facebook account connected' });
+    }
+    
+    const token = crypto.decrypt(account.accessToken);
+    
+    // Get user's pages
+    const pagesResponse = await fetch(
+      `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,category,fan_count&access_token=${token}`
+    );
+    
+    if (pagesResponse.ok) {
+      const pagesData = await pagesResponse.json();
+      return res.json({
+        success: true,
+        pages: pagesData.data || [],
+        currentPageId: account.pageId
+      });
+    } else {
+      const errorData = await pagesResponse.json();
+      return res.status(400).json({ message: errorData.message || 'Failed to fetch pages' });
+    }
+  } catch (error) {
+    console.error('Get Facebook pages error:', error);
+    return res.status(500).json({ message: 'Failed to get Facebook pages', error: error.message });
+  }
+}
+
+// Get current Facebook page info
+async function getCurrentFacebookPage(req, res) {
+  try {
+    const userId = req.userId;
+    const account = await FacebookAccount.findOne({ where: { userId } });
+    
+    if (!account || !account.accessToken) {
+      return res.status(404).json({ message: 'No Facebook account connected' });
+    }
+    
+    const token = crypto.decrypt(account.accessToken);
+    
+    // Get current page info
+    const pageResponse = await fetch(
+      `https://graph.facebook.com/v21.0/${account.pageId}?fields=id,name,fan_count&access_token=${token}`
+    );
+    
+    if (pageResponse.ok) {
+      const pageData = await pageResponse.json();
+      return res.json({
+        success: true,
+        pageId: account.pageId,
+        pageName: pageData.name || account.pageName || 'Unknown Page',
+        fanCount: pageData.fan_count || 0
+      });
+    } else {
+      return res.json({
+        success: true,
+        pageId: account.pageId,
+        pageName: account.pageName || 'Unknown Page',
+        fanCount: 0
+      });
+    }
+  } catch (error) {
+    console.error('Get current Facebook page error:', error);
+    return res.status(500).json({ message: 'Failed to get current Facebook page', error: error.message });
+  }
+}
+
 module.exports = {
   getFacebookAnalytics,
   getLinkedInAnalytics,
   getTwitterAnalytics,
   getYouTubeAnalytics,
   getPinterestAnalytics,
-  getAllAnalytics
+  getAllAnalytics,
+  switchFacebookPage,
+  getAvailableFacebookPages,
+  getCurrentFacebookPage
 };

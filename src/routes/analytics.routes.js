@@ -7,7 +7,10 @@ const {
   getTwitterAnalytics,
   getYouTubeAnalytics,
   getPinterestAnalytics,
-  getAllAnalytics
+  getAllAnalytics,
+  switchFacebookPage,
+  getAvailableFacebookPages,
+  getCurrentFacebookPage
 } = require('../controllers/analytics.controller');
 
 // Get all analytics
@@ -27,6 +30,15 @@ router.get('/youtube', requireAuth, getYouTubeAnalytics);
 
 // Get Pinterest analytics
 router.get('/pinterest', requireAuth, getPinterestAnalytics);
+
+// Switch Facebook page
+router.post('/facebook/switch', requireAuth, switchFacebookPage);
+
+// Get available Facebook pages
+router.get('/facebook/pages', requireAuth, getAvailableFacebookPages);
+
+// Get current Facebook page
+router.get('/facebook/current', requireAuth, getCurrentFacebookPage);
 
 module.exports = router;
 
