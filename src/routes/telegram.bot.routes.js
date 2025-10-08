@@ -1,6 +1,10 @@
 const express = require('express');
 const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
+const { 
+  requireActiveSubscription, 
+  requireTelegramManagement 
+} = require('../middleware/permissions');
 const ctrl = require('../controllers/telegram.bot.controller');
 
 const router = Router();
@@ -9,6 +13,8 @@ router.use('/webhook/:userId', express.json({ type: '*/*' }));
 router.post('/webhook/:userId', ctrl.webhook);
 
 router.use(requireAuth);
+router.use(requireActiveSubscription);
+router.use(requireTelegramManagement);
 router.post('/connect', ctrl.connect);
 router.get('/info', ctrl.info);
 router.get('/test', ctrl.testBot);

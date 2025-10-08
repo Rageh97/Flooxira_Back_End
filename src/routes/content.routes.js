@@ -1,10 +1,16 @@
 const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
+const { 
+  requireActiveSubscription, 
+  requireContentManagement 
+} = require('../middleware/permissions');
 const ctrl = require('../controllers/content.controller');
 
 const router = Router();
 
 router.use(requireAuth);
+router.use(requireActiveSubscription);
+router.use(requireContentManagement);
 
 // Categories
 router.get('/categories', ctrl.listCategories);
@@ -23,6 +29,9 @@ router.delete('/items/:id', ctrl.deleteItem);
 
 // Schedule an item using existing posts pipeline
 router.post('/items/:id/schedule', ctrl.scheduleItem);
+
+// AI Content Generation
+router.post('/ai/generate', ctrl.generateAIContent);
 
 module.exports = router;
 

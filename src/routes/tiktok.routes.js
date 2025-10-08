@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const { 
+  requireActiveSubscription, 
+  requirePlatformAccess 
+} = require('../middleware/permissions');
 const {
   exchangeCode,
   getTikTokAccount,
@@ -10,6 +14,8 @@ const {
 
 // Apply authentication middleware to all routes
 router.use(auth.requireAuth);
+router.use(requireActiveSubscription);
+router.use(requirePlatformAccess('tiktok'));
 
 // TikTok OAuth code exchange
 router.post('/exchange', exchangeCode);

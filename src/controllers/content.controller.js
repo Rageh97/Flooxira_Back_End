@@ -3,6 +3,7 @@ const { ContentCategory } = require('../models/contentCategory');
 const { ContentItem } = require('../models/contentItem');
 const { Post } = require('../models/post');
 const { tryPublishNow } = require('../scheduler');
+const axios = require('axios');
 
 // Categories
 async function listCategories(req, res) {
@@ -158,6 +159,77 @@ async function scheduleItem(req, res) {
   return res.status(201).json({ post });
 }
 
+// AI Content Generation
+async function generateAIContent(req, res) {
+  const { prompt, platform, tone = 'professional', length = 'medium' } = req.body || {};
+  
+  if (!prompt) {
+    return res.status(400).json({ message: 'prompt is required' });
+  }
+
+  try {
+    // For demo purposes, we'll generate content locally
+    // In production, you would call OpenAI API or similar service
+    const generatedContent = await generateContentLocally(prompt, platform, tone, length);
+    
+    return res.json({ 
+      content: generatedContent,
+      prompt: prompt,
+      platform: platform,
+      tone: tone,
+      length: length
+    });
+  } catch (error) {
+    console.error('AI content generation error:', error);
+    return res.status(500).json({ message: 'Failed to generate content' });
+  }
+}
+
+async function generateContentLocally(prompt, platform, tone, length) {
+  // This is a simple local content generator for demo purposes
+  // In production, replace this with actual AI service calls
+  
+  const platformTemplates = {
+    facebook: 'منشور فيسبوك جذاب',
+    instagram: 'منشور إنستغرام بصري',
+    linkedin: 'مقال لينكد إن احترافي',
+    twitter: 'تغريدة تويتر مختصرة',
+    youtube: 'وصف فيديو يوتيوب',
+    tiktok: 'وصف تيك توك ممتع'
+  };
+
+  const toneTemplates = {
+    professional: 'احترافي ومهني',
+    casual: 'ودود ومرح',
+    formal: 'رسمي ومهيب',
+    friendly: 'ودود ومقرب'
+  };
+
+  const lengthTemplates = {
+    short: 'مختصر ومفيد',
+    medium: 'متوسط الطول',
+    long: 'مفصل وشامل'
+  };
+
+  const platformText = platformTemplates[platform] || 'منشور اجتماعي';
+  const toneText = toneTemplates[tone] || 'احترافي';
+  const lengthText = lengthTemplates[length] || 'متوسط';
+
+  return `[${platformText} - ${toneText} - ${lengthText}]
+
+بناءً على طلبك: "${prompt}"
+
+هذا محتوى مُولد بالذكاء الاصطناعي يمكن تخصيصه حسب احتياجاتك. يمكنك تعديل النص وإضافة المزيد من التفاصيل أو تغيير النبرة حسب ما يناسب جمهورك المستهدف.
+
+نصائح للتحسين:
+- أضف هاشتاغات مناسبة للمنصة
+- استخدم إيموجي لجذب الانتباه
+- أضف دعوة للعمل واضحة
+- تأكد من أن المحتوى يتناسب مع هوية علامتك التجارية
+
+يمكنك نسخ هذا المحتوى واستخدامه كأساس لمنشورك، أو طلب تعديلات إضافية.`;
+}
+
 module.exports = {
   listCategories,
   createCategory,
@@ -168,7 +240,8 @@ module.exports = {
   getItem,
   updateItem,
   deleteItem,
-  scheduleItem
+  scheduleItem,
+  generateAIContent
 };
 
 

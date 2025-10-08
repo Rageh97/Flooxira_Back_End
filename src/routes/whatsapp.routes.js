@@ -1,5 +1,10 @@
 const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
+const { 
+  requireActiveSubscription, 
+  requireWhatsAppManagement,
+  checkWhatsAppMessagesLimit 
+} = require('../middleware/permissions');
 const whatsappCtrl = require('../controllers/whatsapp.controller');
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/tmp' });
@@ -7,13 +12,15 @@ const upload = multer({ dest: 'uploads/tmp' });
 const router = Router();
 
 router.use(requireAuth);
+router.use(requireActiveSubscription);
+router.use(requireWhatsAppManagement);
 
 // WhatsApp Web Routes
 router.post('/start', whatsappCtrl.startWhatsAppSession);
 router.get('/status', whatsappCtrl.getWhatsAppStatus);
 router.get('/qr', whatsappCtrl.getQRCode);
 router.post('/stop', whatsappCtrl.stopWhatsAppSession);
-router.post('/send', whatsappCtrl.sendWhatsAppMessage);
+router.post('/send', checkWhatsAppMessagesLimit, whatsappCtrl.sendWhatsAppMessage);
 
 // Chat Management Routes
 router.get('/chats', whatsappCtrl.getChatHistory);
@@ -22,9 +29,9 @@ router.get('/stats', whatsappCtrl.getBotStats);
 
 // Groups & Status
 router.get('/groups', whatsappCtrl.listGroups);
-router.post('/groups/send', whatsappCtrl.sendToGroup);
+router.post('/groups/send', checkWhatsAppMessagesLimit, whatsappCtrl.sendToGroup);
 // Bulk group send with media + scheduling
-router.post('/groups/send-bulk', upload.single('media'), whatsappCtrl.sendToGroupsBulk);
+router.post('/groups/send-bulk', checkWhatsAppMessagesLimit, upload.single('media'), whatsappCtrl.sendToGroupsBulk);
 router.get('/schedules', whatsappCtrl.listSchedules);
 router.post('/schedules/:id/cancel', whatsappCtrl.cancelSchedule);
 router.put('/schedules/:id', upload.single('media'), whatsappCtrl.updateSchedule);

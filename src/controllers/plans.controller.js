@@ -27,7 +27,7 @@ async function listPlans(req, res) {
 
 async function createPlan(req, res) {
   try {
-    const { name, priceCents, interval, features, isActive } = req.body;
+    const { name, priceCents, interval, features, permissions, isActive } = req.body;
     if (!name || !priceCents || !interval) {
       return res.status(400).json({ message: 'Name, priceCents, and interval are required' });
     }
@@ -36,6 +36,7 @@ async function createPlan(req, res) {
       priceCents,
       interval,
       features: features || {},
+      permissions: permissions || {},
       isActive: isActive !== false
     });
     return res.status(201).json({ plan });
@@ -51,11 +52,12 @@ async function updatePlan(req, res) {
     const plan = await Plan.findByPk(id);
     if (!plan) return res.status(404).json({ message: 'Plan not found' });
     
-    const { name, priceCents, interval, features, isActive } = req.body;
+    const { name, priceCents, interval, features, permissions, isActive } = req.body;
     if (name !== undefined) plan.name = name;
     if (priceCents !== undefined) plan.priceCents = priceCents;
     if (interval !== undefined) plan.interval = interval;
     if (features !== undefined) plan.features = features;
+    if (permissions !== undefined) plan.permissions = permissions;
     if (isActive !== undefined) plan.isActive = isActive;
     
     await plan.save();

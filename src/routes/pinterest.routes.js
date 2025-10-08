@@ -1,5 +1,9 @@
 const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
+const { 
+  requireActiveSubscription, 
+  requirePlatformAccess 
+} = require('../middleware/permissions');
 const {
   getPinterestAccount,
   exchangeCode,
@@ -15,6 +19,8 @@ const router = Router();
 
 // All routes require authentication
 router.use(requireAuth);
+router.use(requireActiveSubscription);
+router.use(requirePlatformAccess('pinterest'));
 
 // Exchange OAuth code for access token
 router.post('/exchange', exchangeCode);

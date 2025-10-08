@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const { 
+  requireActiveSubscription, 
+  requirePlatformAccess 
+} = require('../middleware/permissions');
 const {
   exchangeCode,
   getYouTubeAccount,
@@ -11,6 +15,8 @@ const {
 } = require('../controllers/youtube.controller');
 
 router.use(auth.requireAuth);
+router.use(requireActiveSubscription);
+router.use(requirePlatformAccess('youtube'));
 
 router.post('/exchange', exchangeCode);
 router.get('/account', getYouTubeAccount);

@@ -36,10 +36,13 @@ async function callGeminiHTTP(model, prompt) {
 
 // Field aliases in Arabic and English to understand intent-based questions
 const FIELD_ALIASES = {
-  name: ['اسم_المنتج', 'product_name', 'name', 'الاسم', 'اسم'],
-  price: ['السعر', 'price', 'التكلفة', 'cost'],
-  description: ['الوصف', 'description', 'details', 'تفاصيل'],
-  category: ['الفئة', 'القسم', 'التصنيف', 'category'],
+  name: ['اسم_المنتج', 'product_name', 'name', 'الاسم', 'اسم', 'اسم_المنتج', 'product_name'],
+  price: ['السعر', 'price', 'التكلفة', 'cost', 'سعر', 'السعر'],
+  description: ['الوصف', 'description', 'details', 'تفاصيل', 'وصف', 'الوصف'],
+  category: ['الفئة', 'القسم', 'التصنيف', 'category', 'فئة', 'الفئة'],
+  brand: ['الماركة', 'brand', 'ماركة', 'الماركة'],
+  warranty: ['الضمان', 'warranty', 'ضمان', 'الضمان'],
+  stock: ['المخزون', 'stock', 'مخزون', 'المخزون'],
   availability: ['متوفر', 'التوفر', 'المتوفر', 'متاح', 'availability', 'stock', 'in_stock']
 };
 
@@ -129,7 +132,7 @@ function detectIntent(query) {
 
 function getFieldValue(data, aliases) {
   for (const key of aliases) {
-    if (Object.prototype.hasOwnProperty.call(data, key)) return data[key];
+    if (Object.prototype.hasOwnProperty.call(data, key) && data[key] && String(data[key]).trim() !== '') return data[key];
   }
   return undefined;
 }
@@ -172,6 +175,9 @@ async function searchOrAnswer(userId, query, threshold = 0.5, limit = 3, contact
   const fields = await BotField.findAll({ where: { userId } });
   const rows = await BotData.findAll({ where: { userId }, order: [['createdAt','DESC']], limit: 1000 });
   console.log(`[BotSearch] userId=${userId} fields=${fields.length} rows=${rows.length} query="${query}"`);
+  console.log(`[BotSearch] Field names:`, fields.map(f => f.fieldName));
+  console.log(`[BotSearch] Sample data:`, rows.slice(0, 2).map(r => r.data));
+  
   const keys = fields.map((f) => `data.${f.fieldName}`);
   const list = rows.map((r) => ({ id: r.id, data: r.data }));
 
@@ -182,22 +188,33 @@ async function searchOrAnswer(userId, query, threshold = 0.5, limit = 3, contact
       __composite: [
         // include keys and values to help match generic terms
         ...Object.keys(item.data || {}),
-        ...Object.values(item.data || {})
+        ...Object.values(item.data || {}).filter(v => v && String(v).trim() !== '')
       ].map(v => normalizeArabic(v)).join(' | ')
     }));
+    
+    console.log(`[BotSearch] Decorated sample:`, decorated.slice(0, 1));
+    
     const fuse = new Fuse(decorated, {
       includeScore: true,
-      threshold: Math.max(0.35, Math.min(threshold, 0.6)),
-      distance: 200,
+      threshold: Math.max(0.2, Math.min(threshold, 0.8)), // More flexible threshold
+      distance: 300,
       ignoreLocation: true,
-      minMatchCharLength: 2,
+      minMatchCharLength: 1,
       useExtendedSearch: true,
       keys: [...keys, '__composite']
     });
+    
     const expanded = expandQueryWithSynonyms(query);
     const extended = expanded.map((t) => ({ $or: [{ __composite: t }, ...keys.map((k) => ({ [k]: t }))] }));
     const normalizedQuery = normalizeArabic(query);
+    
+    console.log(`[BotSearch] Expanded query:`, expanded);
+    console.log(`[BotSearch] Normalized query:`, normalizedQuery);
+    
     const results = fuse.search(extended.length ? { $and: extended } : normalizedQuery).slice(0, limit);
+    
+    console.log(`[BotSearch] Search results:`, results.length, results.map(r => ({ score: r.score, item: r.item.id })));
+    
     if (results.length && (results[0].score ?? 1) <= threshold) {
       return { source: 'fuse', matches: results.map((r) => r.item) };
     }

@@ -26,6 +26,28 @@ const Plan = sequelize.define('Plan', {
     allowNull: true,
     defaultValue: {}
   },
+  permissions: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: {
+      // المنصات الاجتماعية المسموحة
+      platforms: [], // ['facebook', 'instagram', 'twitter', 'linkedin', 'pinterest', 'tiktok', 'youtube']
+      
+      // عدد المنشورات الشهرية
+      monthlyPosts: 0, // عدد البوستات المسموح شهرياً
+      
+      // إدارة الواتساب والتليجرام
+      canManageWhatsApp: false, // إمكانية إدارة الواتساب
+      whatsappMessagesPerMonth: 0, // عدد رسائل الواتساب شهرياً
+      canManageTelegram: false, // إمكانية إدارة التليجرام
+      
+      // تكامل سلة
+      canSallaIntegration: false, // إمكانية تكامل سلة
+      
+      // إدارة المحتوى
+      canManageContent: false // إمكانية إدارة المحتوى
+    }
+  },
   isActive: {
     type: DataTypes.BOOLEAN,
     allowNull: false,

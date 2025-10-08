@@ -132,7 +132,30 @@ async function uploadExcel(req, res) {
     const wb = XLSX.readFile(file.path);
     const sheetName = wb.SheetNames[0];
     const ws = wb.Sheets[sheetName];
-    const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    const rawData = XLSX.utils.sheet_to_json(ws, { defval: '', header: 1 });
+    console.log('Raw Excel data:', rawData.slice(0, 3));
+    
+    // Convert to object format with proper headers
+    let json = [];
+    if (rawData.length > 0) {
+      const headers = rawData[0];
+      const dataRows = rawData.slice(1);
+      json = dataRows.map(row => {
+        const obj = {};
+        headers.forEach((header, index) => {
+          if (header && header.trim() !== '') {
+            obj[header] = row[index] || '';
+          } else {
+            obj[`column_${index + 1}`] = row[index] || '';
+          }
+        });
+        return obj;
+      });
+      
+      console.log('Processed Excel data:', json.slice(0, 2));
+      console.log('Headers:', headers);
+      console.log('Data rows count:', dataRows.length);
+    }
     console.log('Excel data sample:', json.slice(0, 2));
     console.log('All columns:', Object.keys(json[0] || {}));
 
@@ -147,6 +170,7 @@ async function uploadExcel(req, res) {
     }
     
     console.log('All columns found:', Array.from(allColumns));
+    console.log('Total columns found:', allColumns.size);
     
     // Create mapping for each column
     Array.from(allColumns).forEach((k, index) => {
@@ -158,6 +182,9 @@ async function uploadExcel(req, res) {
         const emptyIndex = k.replace('__EMPTY', '').replace('_', '');
         const emptyNum = emptyIndex ? parseInt(emptyIndex) : 0;
         sanitized = `column_${emptyNum + 2}`;
+      } else if (k.startsWith('column_')) {
+        // Keep column names as is
+        sanitized = k;
       } else {
         sanitized = sanitizeFieldName(k, index);
       }
@@ -167,6 +194,7 @@ async function uploadExcel(req, res) {
       console.log(`Column mapping: "${k}" -> "${sanitized}"`);
     });
     console.log('Final field names:', Array.from(fieldNames));
+    console.log('Total field names:', fieldNames.size);
     
     const existing = await BotField.findAll({ where: { userId } });
     const existingNames = new Set(existing.map((f) => f.fieldName));

@@ -536,22 +536,36 @@ class WhatsAppService {
           // Format top match into a comprehensive, organized product details
           const top = result.matches[0];
           const data = top.data || {};
-          const name = data['اسم_المنتج'] || data['product_name'] || data['name'] || '';
-          const price = data['السعر'] || data['price'] || '';
-          const category = data['الفئة'] || data['category'] || '';
-          const desc = data['الوصف'] || data['description'] || '';
-          const brand = data['الماركة'] || data['brand'] || '';
-          const warranty = data['الضمان'] || data['warranty'] || '';
-          const stock = data['المخزون'] || data['stock'] || '';
+          
+          console.log(`[WA] BotData match found:`, data);
+          
+          // Try to find relevant fields with better field matching
+          const name = data['اسم_المنتج'] || data['product_name'] || data['name'] || data['الاسم'] || data['اسم'] || '';
+          const price = data['السعر'] || data['price'] || data['سعر'] || '';
+          const category = data['الفئة'] || data['category'] || data['فئة'] || '';
+          const desc = data['الوصف'] || data['description'] || data['وصف'] || data['تفاصيل'] || data['details'] || '';
+          const brand = data['الماركة'] || data['brand'] || data['ماركة'] || '';
+          const warranty = data['الضمان'] || data['warranty'] || data['ضمان'] || '';
+          const stock = data['المخزون'] || data['stock'] || data['مخزون'] || '';
           
           let productDetails = '';
-          if (name) productDetails += `📱 المنتج: ${name}\n`;
-          if (price) productDetails += `💰 السعر: ${price} ريال سعودي\n`;
-          if (category) productDetails += `📂 الفئة: ${category}\n`;
-          if (brand) productDetails += `🏷️ الماركة: ${brand}\n`;
-          if (desc) productDetails += `📝 الوصف: ${String(desc).slice(0, 200)}\n`;
-          if (warranty) productDetails += `🛡️ الضمان: ${warranty}\n`;
-          if (stock) productDetails += `📦 المخزون: ${stock}\n`;
+          if (name) productDetails += `📱 المنتج: ${name}\n\n`;
+          if (price) productDetails += `💰 السعر: ${price} ريال سعودي\n\n`;
+          if (category) productDetails += `📂 الفئة: ${category}\n\n`;
+          if (brand) productDetails += `🏷️ الماركة: ${brand}\n\n`;
+          if (desc) productDetails += `📝 الوصف: ${String(desc).slice(0, 300)}\n\n`;
+          if (warranty) productDetails += `🛡️ الضمان: ${warranty}\n\n`;
+          if (stock) productDetails += `📦 المخزون: ${stock}\n\n`;
+          
+          // Add other fields that might be relevant
+          Object.entries(data).forEach(([key, value]) => {
+            if (value && String(value).trim() !== '' && 
+                !['اسم_المنتج', 'product_name', 'name', 'الاسم', 'اسم', 'السعر', 'price', 'سعر', 
+                  'الفئة', 'category', 'فئة', 'الوصف', 'description', 'وصف', 'تفاصيل', 'details',
+                  'الماركة', 'brand', 'ماركة', 'الضمان', 'warranty', 'ضمان', 'المخزون', 'stock', 'مخزون'].includes(key)) {
+              productDetails += `${key}: ${value}\n`;
+            }
+          });
           
           // Add marketing persuasion for Chance Play
           productDetails += `\n✨ هذا المنتج مميز جداً ويستحق الشراء!\n🛡️ عندك ضمان كامل وخدمة عملاء ممتازة في شانس بلاي\n🚚 توصيل سريع لجميع أنحاء المملكة\n🎮 شانس بلاي - منصة الألعاب والترفيه الرقمي المفضلة`;

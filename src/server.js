@@ -31,6 +31,9 @@ const whatsappTemplateRoutes = require('./routes/whatsappTemplate.routes');
 const tagRoutes = require('./routes/tag.routes');
 const mediaRoutes = require('./routes/media.routes');
 const campaignRoutes = require('./routes/campaign.routes');
+const subscriptionRequestRoutes = require('./routes/subscriptionRequest.routes');
+const couponRoutes = require('./routes/coupon.routes');
+const billingRoutes = require('./routes/billing.routes');
 const conversationService = require('./services/conversationService');
 const axios = require('axios');
 
@@ -46,6 +49,9 @@ require('./models/user');
 require('./models/telegramSchedule');
 require('./models/telegramChatTag');
 require('./models/platformCredential');
+require('./models/subscriptionRequest');
+require('./models/coupon');
+require('./models/userSubscription');
 
 const app = express();
 // Honor X-Forwarded-* headers from proxy/CDN to get correct protocol/host
@@ -165,6 +171,10 @@ app.use('/api', tagRoutes);
 app.use('/api', mediaRoutes);
 app.use('/api', campaignRoutes);
 app.use('/api/content', contentRoutes);
+app.use('/api/subscription-requests', subscriptionRequestRoutes);
+app.use('/api/subscription', subscriptionRequestRoutes);
+app.use('/api/coupons', couponRoutes);
+app.use('/api/billing', billingRoutes);
 app.use('/uploads', express.static('uploads'));
 
 // Lightweight endpoint for Facebook connect with tester handling
@@ -294,11 +304,11 @@ async function start() {
       // Temporarily disable FK checks to avoid creation order issues
       await sequelize.query('SET FOREIGN_KEY_CHECKS=0');
     }
-    await sequelize.sync({ force: true });
+    await sequelize.sync({ alter: true });
     if (isMySQL) {
       await sequelize.query('SET FOREIGN_KEY_CHECKS=1');
     }
-    console.log('✅ Database schema synchronized (all tables recreated).');
+    console.log('✅ Database schema synchronized (all tables edited).');
   } catch (error) {
     if (
       error.name === 'SequelizeConnectionRefusedError' ||
@@ -339,6 +349,37 @@ start().catch((err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection:', reason);
 });
+
+// Define model associations
+const { User } = require('./models/user');
+const { Plan } = require('./models/plan');
+const { Coupon } = require('./models/coupon');
+const { SubscriptionRequest } = require('./models/subscriptionRequest');
+const { UserSubscription } = require('./models/userSubscription');
+
+// Plan associations
+Plan.hasMany(Coupon, { foreignKey: 'planId', as: 'coupons' });
+Plan.hasMany(UserSubscription, { foreignKey: 'planId', as: 'subscriptions' });
+Plan.hasMany(SubscriptionRequest, { foreignKey: 'planId', as: 'subscriptionRequests' });
+
+// Coupon associations
+Coupon.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
+Coupon.belongsTo(User, { foreignKey: 'usedBy', as: 'usedByUser' });
+
+// User associations
+User.hasMany(Coupon, { foreignKey: 'usedBy', as: 'usedCoupons' });
+User.hasMany(UserSubscription, { foreignKey: 'userId', as: 'subscriptions' });
+User.hasMany(SubscriptionRequest, { foreignKey: 'userId', as: 'subscriptionRequests' });
+
+// SubscriptionRequest associations
+SubscriptionRequest.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+SubscriptionRequest.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
+SubscriptionRequest.hasOne(UserSubscription, { foreignKey: 'subscriptionRequestId', as: 'subscription' });
+
+// UserSubscription associations
+UserSubscription.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+UserSubscription.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
+UserSubscription.belongsTo(SubscriptionRequest, { foreignKey: 'subscriptionRequestId', as: 'subscriptionRequest' });
 
 process.on('uncaughtException', (err) => {
   // Avoid crashing on transient Windows file locking issues
