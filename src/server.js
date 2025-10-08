@@ -34,6 +34,7 @@ const campaignRoutes = require('./routes/campaign.routes');
 const subscriptionRequestRoutes = require('./routes/subscriptionRequest.routes');
 const couponRoutes = require('./routes/coupon.routes');
 const billingRoutes = require('./routes/billing.routes');
+const analyticsRoutes = require('./routes/analytics.routes');
 const conversationService = require('./services/conversationService');
 const axios = require('axios');
 
@@ -175,6 +176,7 @@ app.use('/api/subscription-requests', subscriptionRequestRoutes);
 app.use('/api/subscription', subscriptionRequestRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/uploads', express.static('uploads'));
 
 // Lightweight endpoint for Facebook connect with tester handling

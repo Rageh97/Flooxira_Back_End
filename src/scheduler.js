@@ -113,26 +113,52 @@ async function tryPublishNow(post) {
     if (post.platforms.includes('youtube')) {
       const ytAccount = await YouTubeAccount.findOne({ where: { userId: post.userId } });
       if (ytAccount && ytAccount.accessToken) {
-        // Check if post type is video for YouTube
-        if (post.type !== 'video') {
-          console.log('YouTube requires video content, skipping photo/text post');
-          publishResults.youtube = { error: 'YouTube requires video content. Please upload a video file.' };
-        } else if (!post.mediaUrl) {
-          console.log('YouTube requires media URL for video');
-          publishResults.youtube = { error: 'YouTube requires a video file to be uploaded.' };
-        } else {
+        // YouTube now supports text posts with photos (as community posts)
+        if (post.type === 'video' && post.mediaUrl) {
+          // Video post - upload to YouTube
           try {
             const ytResult = await tryPublishToYouTube(post, ytAccount);
             if (ytResult) {
               post.youtubeVideoId = ytResult.id;
               publishResults.youtube = ytResult;
               publishedToAny = true;
-              console.log('Post published to YouTube successfully');
+              console.log('Video published to YouTube successfully');
             }
           } catch (youtubeError) {
-            console.error('YouTube publishing failed:', youtubeError.message);
+            console.error('YouTube video publishing failed:', youtubeError.message);
             publishResults.youtube = { error: youtubeError.message };
           }
+        } else if (post.type === 'photo' && post.mediaUrl) {
+          // Photo post - create YouTube community post
+          try {
+            const ytResult = await tryPublishToYouTubeCommunity(post, ytAccount);
+            if (ytResult) {
+              post.youtubePostId = ytResult.id;
+              publishResults.youtube = ytResult;
+              publishedToAny = true;
+              console.log('Photo published to YouTube community successfully');
+            }
+          } catch (youtubeError) {
+            console.error('YouTube community post publishing failed:', youtubeError.message);
+            publishResults.youtube = { error: youtubeError.message };
+          }
+        } else if (post.type === 'text') {
+          // Text post - create YouTube community post
+          try {
+            const ytResult = await tryPublishToYouTubeCommunity(post, ytAccount);
+            if (ytResult) {
+              post.youtubePostId = ytResult.id;
+              publishResults.youtube = ytResult;
+              publishedToAny = true;
+              console.log('Text published to YouTube community successfully');
+            }
+          } catch (youtubeError) {
+            console.error('YouTube community post publishing failed:', youtubeError.message);
+            publishResults.youtube = { error: youtubeError.message };
+          }
+        } else {
+          console.log('YouTube requires content (text, photo, or video)');
+          publishResults.youtube = { error: 'YouTube requires content (text, photo, or video)' };
         }
       } else {
         console.log('No YouTube account found for user:', post.userId);
@@ -181,25 +207,14 @@ async function tryPublishNow(post) {
         const TwitterAccount = require('./models/twitterAccount');
         const twitterAccount = await TwitterAccount.findOne({ where: { userId: post.userId } });
         if (twitterAccount && twitterAccount.accessToken) {
-          const textParts = [];
-          if (post.content) textParts.push(post.content);
-          if (post.linkUrl) textParts.push(post.linkUrl);
-          if (post.hashtags) textParts.push(post.hashtags);
-          const text = textParts.filter(Boolean).join(' ').trim().slice(0, 280);
-          const resp = await fetch('https://api.twitter.com/2/tweets', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${twitterAccount.accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text })
-          });
-          const data = await resp.json();
-          if (resp.ok && data?.data?.id) {
-            post.twitterPostId = data.data.id;
-            publishResults.twitter = { id: data.data.id };
+          const twitterResult = await tryPublishToTwitter(post, twitterAccount);
+          if (twitterResult) {
+            post.twitterPostId = twitterResult.id;
+            publishResults.twitter = twitterResult;
             publishedToAny = true;
             console.log('Post published to Twitter successfully');
           } else {
-            console.log('Twitter publish failed:', data);
-            publishResults.twitter = { error: data?.detail || 'Twitter publish failed' };
+            publishResults.twitter = { error: 'Twitter publish failed' };
           }
         } else {
           console.log('No Twitter account found for user:', post.userId);
@@ -736,6 +751,64 @@ async function tryPublishToTikTok(post, account) {
   }
 }
 
+async function tryPublishToYouTubeCommunity(post, account) {
+  try {
+    let google;
+    try {
+      ({ google } = require('googleapis'));
+    } catch (e) {
+      console.error('googleapis module is not installed; skipping YouTube community post');
+      return null;
+    }
+
+    const { getClientCredentials } = require('./services/credentialsService');
+    const { clientId, clientSecret, redirectUri } = await getClientCredentials(post.userId, 'youtube');
+    const oauth2Client = new google.auth.OAuth2(
+      clientId || process.env.GOOGLE_CLIENT_ID,
+      clientSecret || process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri || process.env.GOOGLE_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/youtube/callback`
+    );
+    
+    oauth2Client.setCredentials({
+      access_token: account.accessToken,
+      refresh_token: account.refreshToken
+    });
+    
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+
+    // Get channel ID
+    const channelsResp = await youtube.channels.list({ mine: true, part: ['id'] });
+    if (!channelsResp.data.items || channelsResp.data.items.length === 0) {
+      throw new Error('No YouTube channels found for this account');
+    }
+    const channelId = channelsResp.data.items[0].id;
+
+    // Create community post
+    const communityPost = {
+      snippet: {
+        channelId: channelId,
+        textOriginal: post.content || 'Community post'
+      }
+    };
+
+    // If there's a photo, we'll create a post with image
+    if (post.mediaUrl && post.type === 'photo') {
+      // For now, we'll include the image URL in the text
+      communityPost.snippet.textOriginal = `${post.content || 'Community post'}\n\nImage: ${post.mediaUrl}`;
+    }
+
+    const response = await youtube.communityPosts.insert({
+      part: ['snippet'],
+      requestBody: communityPost
+    });
+
+    return { id: response.data.id, type: 'community_post' };
+  } catch (e) {
+    console.error('YouTube community post publishing failed:', e);
+    return null;
+  }
+}
+
 async function tryPublishToYouTube(post, account) {
   try {
     if (post.type !== 'video' || !post.mediaUrl) {
@@ -1095,6 +1168,69 @@ async function tryPublishToLinkedIn(post, account) {
     return { id: postResult.id, type: 'linkedin_post' };
   } catch (e) {
     console.error('LinkedIn publishing failed:', e);
+    return null;
+  }
+}
+
+async function tryPublishToTwitter(post, account) {
+  try {
+    const textParts = [];
+    if (post.content) textParts.push(post.content);
+    if (post.linkUrl) textParts.push(post.linkUrl);
+    if (post.hashtags) textParts.push(post.hashtags);
+    const text = textParts.filter(Boolean).join(' ').trim().slice(0, 280);
+
+    // If there's media, upload it first
+    let mediaIds = [];
+    if (post.mediaUrl && (post.type === 'photo' || post.type === 'video')) {
+      try {
+        // Upload media to Twitter
+        const mediaResponse = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${account.accessToken}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams({
+            media_url: post.mediaUrl
+          })
+        });
+        
+        if (mediaResponse.ok) {
+          const mediaData = await mediaResponse.json();
+          mediaIds.push(mediaData.media_id_string);
+          console.log('Media uploaded to Twitter:', mediaData.media_id_string);
+        }
+      } catch (mediaError) {
+        console.log('Failed to upload media to Twitter:', mediaError.message);
+        // Continue with text-only post
+      }
+    }
+
+    // Create tweet with or without media
+    const tweetData = { text };
+    if (mediaIds.length > 0) {
+      tweetData.media = { media_ids: mediaIds };
+    }
+
+    const resp = await fetch('https://api.twitter.com/2/tweets', {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${account.accessToken}`, 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify(tweetData)
+    });
+    
+    const data = await resp.json();
+    if (resp.ok && data?.data?.id) {
+      return { id: data.data.id, type: 'tweet' };
+    } else {
+      console.log('Twitter publish failed:', data);
+      throw new Error(data?.detail || 'Twitter publish failed');
+    }
+  } catch (e) {
+    console.error('Twitter publishing failed:', e);
     return null;
   }
 }
