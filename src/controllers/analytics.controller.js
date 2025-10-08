@@ -23,7 +23,7 @@ async function getFacebookAnalytics(req, res) {
     try {
       console.log(`[Analytics] Fetching Facebook insights for user ${userId}, page ${account.pageId}`);
       const insightsResponse = await fetch(
-        `https://graph.facebook.com/v21.0/${account.pageId}/insights?metric=page_fans,page_impressions,page_engaged_users,page_post_engagements&period=day&since=${Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
+        `https://graph.facebook.com/v21.0/${account.pageId}/insights?metric=page_fans,page_impressions,page_engaged_users&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
       );
       
       if (insightsResponse.ok) {
@@ -97,7 +97,7 @@ async function getLinkedInAnalytics(req, res) {
       return res.status(404).json({ message: 'No LinkedIn account connected' });
     }
 
-    const token = crypto.decrypt(account.accessToken);
+    const token = account.accessToken; // LinkedIn tokens are not encrypted
     const analytics = {};
 
     // Get profile stats - Real data from user's connected LinkedIn account
@@ -164,7 +164,13 @@ async function getTwitterAnalytics(req, res) {
     try {
       console.log(`[Analytics] Fetching Twitter metrics for user ${userId}`);
       const userResponse = await fetch(
-        `https://api.twitter.com/2/users/me?user.fields=public_metrics&access_token=${account.accessToken}`
+        `https://api.twitter.com/2/users/me?user.fields=public_metrics`,
+        {
+          headers: {
+            'Authorization': `Bearer ${account.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
       );
       
       if (userResponse.ok) {
@@ -184,7 +190,13 @@ async function getTwitterAnalytics(req, res) {
     // Get recent tweets
     try {
       const tweetsResponse = await fetch(
-        `https://api.twitter.com/2/users/${account.twitterUserId}/tweets?tweet.fields=public_metrics,created_at&max_results=10&access_token=${account.accessToken}`
+        `https://api.twitter.com/2/users/${account.twitterUserId}/tweets?tweet.fields=public_metrics,created_at&max_results=10`,
+        {
+          headers: {
+            'Authorization': `Bearer ${account.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
       );
       
       if (tweetsResponse.ok) {
@@ -305,7 +317,7 @@ async function getPinterestAnalytics(req, res) {
       return res.status(404).json({ message: 'No Pinterest account connected' });
     }
 
-    const token = crypto.decrypt(account.accessToken);
+    const token = account.accessToken; // Pinterest tokens are not encrypted
     const analytics = {};
 
     // Get user info - Real data from user's connected Pinterest account
@@ -397,7 +409,7 @@ async function getAllAnalytics(req, res) {
       const linkedinAccount = await LinkedInAccount.findOne({ where: { userId } });
       if (linkedinAccount && linkedinAccount.accessToken) {
         console.log(`[Analytics] Fetching LinkedIn analytics for user ${userId}`);
-        const token = crypto.decrypt(linkedinAccount.accessToken);
+        const token = linkedinAccount.accessToken; // LinkedIn tokens are not encrypted
         
         const networkResponse = await fetch(
           `https://api.linkedin.com/v2/networkSizes/edge=1?edgeType=CompanyFollowedByMember&q=viewer&access_token=${token}`
@@ -426,7 +438,13 @@ async function getAllAnalytics(req, res) {
       if (twitterAccount && twitterAccount.accessToken) {
         console.log(`[Analytics] Fetching Twitter analytics for user ${userId}`);
         const userResponse = await fetch(
-          `https://api.twitter.com/2/users/me?user.fields=public_metrics&access_token=${twitterAccount.accessToken}`
+          `https://api.twitter.com/2/users/me?user.fields=public_metrics`,
+          {
+            headers: {
+              'Authorization': `Bearer ${twitterAccount.accessToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
         );
         
         if (userResponse.ok) {
@@ -495,6 +513,34 @@ async function getAllAnalytics(req, res) {
       }
     } catch (error) {
       console.log(`[Analytics] YouTube analytics error for user ${userId}:`, error.message);
+    }
+
+    // Get Pinterest analytics - Real data from user's connected Pinterest account
+    try {
+      const pinterestAccount = await PinterestAccount.findOne({ where: { userId } });
+      if (pinterestAccount && pinterestAccount.accessToken) {
+        console.log(`[Analytics] Fetching Pinterest analytics for user ${userId}`);
+        const token = pinterestAccount.accessToken; // Pinterest tokens are not encrypted
+        
+        const userResponse = await fetch(
+          `https://api.pinterest.com/v5/user_account?access_token=${token}`
+        );
+        
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          analytics.pinterest = {
+            user: userData,
+            username: pinterestAccount.username
+          };
+          console.log(`[Analytics] Pinterest analytics fetched for user ${userId}:`, userData.username);
+        } else {
+          console.log(`[Analytics] Pinterest analytics error for user ${userId}:`, await userResponse.json());
+        }
+      } else {
+        console.log(`[Analytics] No Pinterest account found for user ${userId}`);
+      }
+    } catch (error) {
+      console.log(`[Analytics] Pinterest analytics error for user ${userId}:`, error.message);
     }
 
     // Log analytics summary for debugging
