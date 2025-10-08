@@ -463,39 +463,30 @@ async function getAllAnalytics(req, res) {
         // Get page insights - Enhanced metrics for better analytics
         try {
           console.log(`[Analytics] Fetching Facebook insights for user ${userId}, page ${facebookAccount.pageId}`);
-          // Get multiple insights separately to avoid API errors
-          const insightsPromises = [
-            // Page fans
-            fetch(`https://graph.facebook.com/v21.0/${facebookAccount.pageId}/insights?metric=page_fans&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`),
-            // Page impressions
-            fetch(`https://graph.facebook.com/v21.0/${facebookAccount.pageId}/insights?metric=page_impressions&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`),
-            // Page engaged users
-            fetch(`https://graph.facebook.com/v21.0/${facebookAccount.pageId}/insights?metric=page_engaged_users&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`)
-          ];
+          // Get page insights - Use basic metrics that are always available
+          const insightsResponse = await fetch(
+            `https://graph.facebook.com/v21.0/${facebookAccount.pageId}/insights?metric=page_fans&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
+          );
           
-          const insightsResponses = await Promise.allSettled(insightsPromises);
-          const allInsights = [];
-          
-          for (let i = 0; i < insightsResponses.length; i++) {
-            const response = insightsResponses[i];
-            if (response.status === 'fulfilled' && response.value.ok) {
-              try {
-                const data = await response.value.json();
-                if (data.data && data.data.length > 0) {
-                  allInsights.push(...data.data);
-                }
-              } catch (error) {
-                console.log(`[Analytics] Error parsing insights ${i}:`, error.message);
-              }
-            }
+          if (insightsResponse.ok) {
+            const insightsData = await insightsResponse.json();
+            analytics.facebook = {
+              insights: insightsData.data || [],
+              pageId: facebookAccount.pageId,
+              hasInstagram: !!facebookAccount.instagramId
+            };
+            console.log(`[Analytics] Facebook insights fetched for user ${userId}:`, insightsData.data?.length || 0, 'metrics');
+          } else {
+            const errorData = await insightsResponse.json();
+            console.log(`[Analytics] Facebook insights error for user ${userId}:`, errorData);
+            // Still set facebook object but with empty insights
+            analytics.facebook = {
+              insights: [],
+              pageId: facebookAccount.pageId,
+              hasInstagram: !!facebookAccount.instagramId,
+              error: errorData.message || 'Failed to fetch insights'
+            };
           }
-          
-          analytics.facebook = {
-            insights: allInsights,
-            pageId: facebookAccount.pageId,
-            hasInstagram: !!facebookAccount.instagramId
-          };
-          console.log(`[Analytics] Facebook insights fetched for user ${userId}:`, allInsights.length, 'metrics');
         } catch (error) {
           console.log(`[Analytics] Facebook insights error for user ${userId}:`, error.message);
           analytics.facebook = {
@@ -549,35 +540,23 @@ async function getAllAnalytics(req, res) {
               console.log(`[Analytics] Instagram account info failed for user ${userId}, using basic info`);
             }
             
-            // Get Instagram insights
-            const insightsPromises = [
-              fetch(`https://graph.facebook.com/v21.0/${facebookAccount.instagramId}/insights?metric=impressions&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`),
-              fetch(`https://graph.facebook.com/v21.0/${facebookAccount.instagramId}/insights?metric=reach&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`),
-              fetch(`https://graph.facebook.com/v21.0/${facebookAccount.instagramId}/insights?metric=profile_views&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`)
-            ];
-            
-            const insightsResponses = await Promise.allSettled(insightsPromises);
-            const instagramInsights = [];
-            
-            for (let i = 0; i < insightsResponses.length; i++) {
-              const response = insightsResponses[i];
-              if (response.status === 'fulfilled' && response.value.ok) {
-                try {
-                  const data = await response.value.json();
-                  if (data.data && data.data.length > 0) {
-                    instagramInsights.push(...data.data);
-                  }
-                } catch (error) {
-                  console.log(`[Analytics] Error parsing Instagram insights ${i}:`, error.message);
+            // Get Instagram insights - simplified approach
+            try {
+              const insightsResponse = await fetch(
+                `https://graph.facebook.com/v21.0/${facebookAccount.instagramId}/insights?metric=impressions&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
+              );
+              
+              if (insightsResponse.ok) {
+                const insightsData = await insightsResponse.json();
+                if (analytics.instagram) {
+                  analytics.instagram.insights = insightsData.data || [];
                 }
               }
+            } catch (insightsError) {
+              console.log(`[Analytics] Instagram insights error for user ${userId}:`, insightsError.message);
             }
             
-            if (analytics.instagram) {
-              analytics.instagram.insights = instagramInsights;
-            }
-            
-            console.log(`[Analytics] Instagram insights fetched for user ${userId}:`, instagramInsights.length, 'metrics');
+            console.log(`[Analytics] Instagram analytics completed for user ${userId}`);
           } catch (error) {
             console.log('Instagram insights error:', error.message);
             // Still create basic Instagram object even if insights fail
@@ -832,7 +811,26 @@ async function getAvailableFacebookPages(req, res) {
       });
     } else {
       const errorData = await pagesResponse.json();
-      return res.status(400).json({ message: errorData.message || 'Failed to fetch pages' });
+      console.log(`[Analytics] Facebook pages error for user ${userId}:`, errorData);
+      
+      // If we can't get pages, return current page as fallback
+      if (account.pageId) {
+        return res.json({
+          success: true,
+          pages: [{
+            id: account.pageId,
+            name: account.pageName || 'Current Page',
+            category: 'Unknown',
+            fan_count: 0
+          }],
+          currentPageId: account.pageId
+        });
+      }
+      
+      return res.status(400).json({ 
+        message: errorData.error?.message || errorData.message || 'Failed to fetch pages',
+        error: errorData 
+      });
     }
   } catch (error) {
     console.error('Get Facebook pages error:', error);
