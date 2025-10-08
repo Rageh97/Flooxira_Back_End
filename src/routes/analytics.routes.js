@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 const {
   getFacebookAnalytics,
   getLinkedInAnalytics,
@@ -11,22 +11,22 @@ const {
 } = require('../controllers/analytics.controller');
 
 // Get all analytics
-router.get('/', authenticate, getAllAnalytics);
+router.get('/', requireAuth, getAllAnalytics);
 
 // Get Facebook analytics
-router.get('/facebook', authenticate, getFacebookAnalytics);
+router.get('/facebook', requireAuth, getFacebookAnalytics);
 
 // Get LinkedIn analytics
-router.get('/linkedin', authenticate, getLinkedInAnalytics);
+router.get('/linkedin', requireAuth, getLinkedInAnalytics);
 
 // Get Twitter analytics
-router.get('/twitter', authenticate, getTwitterAnalytics);
+router.get('/twitter', requireAuth, getTwitterAnalytics);
 
 // Get YouTube analytics
-router.get('/youtube', authenticate, getYouTubeAnalytics);
+router.get('/youtube', requireAuth, getYouTubeAnalytics);
 
 // Get Pinterest analytics
-router.get('/pinterest', authenticate, getPinterestAnalytics);
+router.get('/pinterest', requireAuth, getPinterestAnalytics);
 
 module.exports = router;
 
