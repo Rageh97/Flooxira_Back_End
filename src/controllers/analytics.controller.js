@@ -540,7 +540,7 @@ async function getAllAnalytics(req, res) {
                 username: facebookAccount.instagramUsername || accountData.username
               };
               console.log(`[Analytics] Instagram account info fetched for user ${userId}:`, accountData.username);
-            } else {
+        } else {
               // If account info fails, still create basic Instagram object
               analytics.instagram = {
                 account: { id: facebookAccount.instagramId },
@@ -726,7 +726,7 @@ async function getAllAnalytics(req, res) {
       const pinterestAccount = await PinterestAccount.findOne({ where: { userId } });
       if (pinterestAccount && pinterestAccount.accessToken) {
         console.log(`[Analytics] Fetching Pinterest analytics for user ${userId}`);
-        const token = pinterestAccount.accessToken; // Pinterest tokens are not encrypted
+        const token = crypto.decrypt(pinterestAccount.accessToken); // Pinterest tokens are encrypted
         
         const userResponse = await fetch(
           `https://api.pinterest.com/v5/user_account?access_token=${token}`
@@ -752,6 +752,7 @@ async function getAllAnalytics(req, res) {
     // Log analytics summary for debugging
     console.log(`[Analytics] Analytics summary for user ${userId}:`, {
       facebook: !!analytics.facebook,
+      instagram: !!analytics.instagram,
       linkedin: !!analytics.linkedin,
       twitter: !!analytics.twitter,
       youtube: !!analytics.youtube,
