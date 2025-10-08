@@ -1,4 +1,8 @@
 const FacebookAccount = require('../models/facebookAccount');
+const LinkedInAccount = require('../models/linkedinAccount');
+const TwitterAccount = require('../models/twitterAccount');
+const YouTubeAccount = require('../models/youtubeAccount');
+const PinterestAccount = require('../models/pinterestAccount');
 const crypto = require('../utils/crypto');
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({default: f}) => f(...args)));
 
