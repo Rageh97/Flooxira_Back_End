@@ -22,9 +22,9 @@ async function getFacebookAnalytics(req, res) {
     // Get page insights - Real data from user's connected Facebook page
     try {
       console.log(`[Analytics] Fetching Facebook insights for user ${userId}, page ${account.pageId}`);
-      // Use only valid Facebook insights metrics
+      // Use basic metrics that are always available
       const insightsResponse = await fetch(
-        `https://graph.facebook.com/v21.0/${account.pageId}/insights?metric=page_fans,page_impressions,page_engaged_users&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
+        `https://graph.facebook.com/v21.0/${account.pageId}/insights?metric=page_fans&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
       );
       
       if (insightsResponse.ok) {
@@ -105,7 +105,13 @@ async function getLinkedInAnalytics(req, res) {
     try {
       console.log(`[Analytics] Fetching LinkedIn profile for user ${userId}`);
       const profileResponse = await fetch(
-        `https://api.linkedin.com/v2/people/~?projection=(id,firstName,lastName,profilePicture(displayImage~:playableStreams))&access_token=${token}`
+        `https://api.linkedin.com/v2/people/~?projection=(id,firstName,lastName,profilePicture(displayImage~:playableStreams))`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'X-Restli-Protocol-Version': '2.0.0'
+          }
+        }
       );
       
       if (profileResponse.ok) {
@@ -125,7 +131,13 @@ async function getLinkedInAnalytics(req, res) {
     // Get network size
     try {
       const networkResponse = await fetch(
-        `https://api.linkedin.com/v2/networkSizes/edge=1?edgeType=CompanyFollowedByMember&q=viewer&access_token=${token}`
+        `https://api.linkedin.com/v2/networkSizes/edge=1?edgeType=CompanyFollowedByMember&q=viewer`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'X-Restli-Protocol-Version': '2.0.0'
+          }
+        }
       );
       
       if (networkResponse.ok) {
@@ -382,9 +394,9 @@ async function getAllAnalytics(req, res) {
         console.log(`[Analytics] Fetching Facebook analytics for user ${userId}, page ${facebookAccount.pageId}`);
         const token = crypto.decrypt(facebookAccount.accessToken);
         
-        // Get page insights - Use only valid Facebook insights metrics
+        // Get page insights - Use basic metrics that are always available
         const insightsResponse = await fetch(
-          `https://graph.facebook.com/v21.0/${facebookAccount.pageId}/insights?metric=page_fans,page_impressions,page_engaged_users&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
+          `https://graph.facebook.com/v21.0/${facebookAccount.pageId}/insights?metric=page_fans&period=day&since=${Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60}&until=${Math.floor(Date.now() / 1000)}&access_token=${token}`
         );
         
         if (insightsResponse.ok) {
@@ -420,9 +432,15 @@ async function getAllAnalytics(req, res) {
         console.log(`[Analytics] Fetching LinkedIn analytics for user ${userId}`);
         const token = linkedinAccount.accessToken; // LinkedIn tokens are not encrypted
         
-        // First try to get profile info
+        // First try to get profile info using Bearer token in headers
         const profileResponse = await fetch(
-          `https://api.linkedin.com/v2/people/~?projection=(id,firstName,lastName)&access_token=${token}`
+          `https://api.linkedin.com/v2/people/~?projection=(id,firstName,lastName)`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'X-Restli-Protocol-Version': '2.0.0'
+            }
+          }
         );
         
         if (profileResponse.ok) {
