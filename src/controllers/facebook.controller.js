@@ -840,11 +840,20 @@ async function exchangeCode(req, res) {
       userData = await userResponse.json();
     }
     
+    // If still error, try with just id field
+    if (userData.error) {
+      console.log('Name field also not available, trying with id only...');
+      userResponse = await fetch(
+        `https://graph.facebook.com/v21.0/me?fields=id&access_token=${longLivedData.access_token}`
+      );
+      userData = await userResponse.json();
+    }
+    
     if (userData.error) {
       return res.status(400).json({ message: userData.error.message });
     }
     
-    console.log('User info received:', userData.name);
+    console.log('User info received:', userData.name || userData.id);
     
     // Encrypt and store the token
     const encryptedToken = crypto.encrypt(longLivedData.access_token);
@@ -855,7 +864,7 @@ async function exchangeCode(req, res) {
       defaults: {
         userId: req.userId,
         fbUserId: userData.id,
-        name: userData.name,
+        name: userData.name || `Facebook User ${userData.id}`,
         email: userData.email || null, // Handle case where email is not available
         accessToken: encryptedToken,
         tokenExpiresAt: longLivedData.expires_in ? new Date(Date.now() + longLivedData.expires_in * 1000) : null
@@ -864,7 +873,7 @@ async function exchangeCode(req, res) {
     
     if (!created) {
       account.fbUserId = userData.id;
-      account.name = userData.name;
+      account.name = userData.name || `Facebook User ${userData.id}`;
       account.email = userData.email || null; // Handle case where email is not available
       account.accessToken = encryptedToken;
       account.tokenExpiresAt = longLivedData.expires_in ? new Date(Date.now() + longLivedData.expires_in * 1000) : null;

@@ -304,7 +304,7 @@ async function start() {
       // Temporarily disable FK checks to avoid creation order issues
       await sequelize.query('SET FOREIGN_KEY_CHECKS=0');
     }
-    await sequelize.sync({ force: true });
+    await sequelize.sync({ alter: true });
     if (isMySQL) {
       await sequelize.query('SET FOREIGN_KEY_CHECKS=1');
     }
