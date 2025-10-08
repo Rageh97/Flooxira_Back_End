@@ -25,6 +25,14 @@ async function exchangeCode(req, res) {
     oauth2Client._clientId = per.clientId;
     oauth2Client._clientSecret = per.clientSecret;
     oauth2Client.redirectUri = per.redirectUri;
+    
+    // Set the correct scopes for YouTube API
+    oauth2Client.scopes = [
+      'https://www.googleapis.com/auth/youtube.upload',
+      'https://www.googleapis.com/auth/youtube',
+      'https://www.googleapis.com/auth/youtube.readonly'
+    ];
+    
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
 

@@ -96,11 +96,42 @@ async function createPost(req, res) {
     platforms,
     pinterestBoardId: pinterestBoardId || null
   });
+
+  console.log('📝 Post created:', {
+    id: post.id,
+    type: post.type,
+    status: post.status,
+    platforms: post.platforms,
+    scheduledAt: post.scheduledAt,
+    hasContent: !!post.content,
+    hasMedia: !!post.mediaUrl
+  });
   
   // If no schedule provided, publish immediately
   if (!scheduledAt) {
-    console.log('Publishing post immediately with platforms:', platforms);
-    await tryPublishNow(post);
+    console.log('🚀 Publishing post immediately with platforms:', platforms);
+    try {
+      const publishResult = await tryPublishNow(post);
+      if (publishResult) {
+        console.log('✅ Post published successfully to at least one platform');
+        post.status = 'published';
+        post.error = null;
+        await post.save();
+      } else {
+        console.log('❌ Post failed to publish to any platform');
+        post.status = 'failed';
+        post.error = 'Failed to publish to any platform';
+        await post.save();
+      }
+    } catch (publishError) {
+      console.error('❌ Error during immediate publishing:', publishError.message);
+      post.status = 'failed';
+      post.error = publishError.message;
+      await post.save();
+    }
+  } else {
+    console.log('📅 Post scheduled for:', finalScheduledAt);
+    console.log('⏰ Post will be published automatically at the scheduled time');
   }
   
   return res.status(201).json({ post });

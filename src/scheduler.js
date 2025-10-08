@@ -24,42 +24,59 @@ async function tryPublishNow(post) {
   });
   
   try {
-    const account = await FacebookAccount.findOne({ where: { userId: post.userId } });
-    console.log('Facebook account found:', {
-      exists: !!account,
-      destination: account?.destination,
-      pageId: account?.pageId,
-      groupId: account?.groupId,
-      hasToken: !!account?.accessToken,
-      hasInstagram: !!account?.instagramId
-    });
-    
-    if (account && account.accessToken) {
-      // Handle Instagram posting if enabled
-      if (post.platforms.includes('instagram') && account.instagramId) {
-        const instagramResult = await tryPublishToInstagram(post, account);
-        if (instagramResult) {
-          post.instagramPostId = instagramResult.id;
-        }
-      }
+    let publishedToAny = false;
+    const publishResults = {};
+
+    // Handle Facebook and Instagram posting
+    if (post.platforms.includes('facebook') || post.platforms.includes('instagram')) {
+      const account = await FacebookAccount.findOne({ where: { userId: post.userId } });
+      console.log('Facebook account found:', {
+        exists: !!account,
+        destination: account?.destination,
+        pageId: account?.pageId,
+        groupId: account?.groupId,
+        hasToken: !!account?.accessToken,
+        hasInstagram: !!account?.instagramId
+      });
       
-      // Handle Facebook posting
-      if (post.platforms.includes('facebook')) {
-        const facebookResult = await tryPublishToFacebook(post, account);
-        if (facebookResult) {
-          post.fbPostId = facebookResult.id;
+      if (account && account.accessToken) {
+        // Handle Instagram posting if enabled
+        if (post.platforms.includes('instagram') && account.instagramId) {
+          try {
+            const instagramResult = await tryPublishToInstagram(post, account);
+            if (instagramResult) {
+              post.instagramPostId = instagramResult.id;
+              publishResults.instagram = instagramResult;
+              publishedToAny = true;
+              console.log('Instagram post published successfully');
+            }
+          } catch (instagramError) {
+            console.error('Instagram publishing failed:', instagramError.message);
+            publishResults.instagram = { error: instagramError.message };
+          }
         }
-      }
-      
-      // Update post status based on results
-      if (post.instagramPostId || post.fbPostId) {
-        post.status = 'published';
-        post.error = null;
-        await post.save();
-        console.log('Post published successfully');
-        return true;
+        
+        // Handle Facebook posting
+        if (post.platforms.includes('facebook')) {
+          try {
+            const facebookResult = await tryPublishToFacebook(post, account);
+            if (facebookResult) {
+              post.fbPostId = facebookResult.id;
+              publishResults.facebook = facebookResult;
+              publishedToAny = true;
+              console.log('Facebook post published successfully');
+            }
+          } catch (facebookError) {
+            console.error('Facebook publishing failed:', facebookError.message);
+            publishResults.facebook = { error: facebookError.message };
+          }
+        }
       } else {
-        throw new Error('Failed to publish to any platform');
+        console.log('No Facebook account found for user:', post.userId);
+        if (post.platforms.includes('facebook') || post.platforms.includes('instagram')) {
+          publishResults.facebook = { error: 'No Facebook account connected' };
+          publishResults.instagram = { error: 'No Facebook account connected' };
+        }
       }
     }
     
@@ -67,17 +84,21 @@ async function tryPublishNow(post) {
     if (post.platforms.includes('tiktok')) {
       const tiktokAccount = await TikTokAccount.findOne({ where: { userId: post.userId } });
       if (tiktokAccount && tiktokAccount.accessToken) {
-        const tiktokResult = await tryPublishToTikTok(post, tiktokAccount);
-        if (tiktokResult) {
-          post.tiktokPostId = tiktokResult.id;
-          post.status = 'published';
-          post.error = null;
-          await post.save();
-          console.log('Post published to TikTok successfully');
-          return true;
+        try {
+          const tiktokResult = await tryPublishToTikTok(post, tiktokAccount);
+          if (tiktokResult) {
+            post.tiktokPostId = tiktokResult.id;
+            publishResults.tiktok = tiktokResult;
+            publishedToAny = true;
+            console.log('Post published to TikTok successfully');
+          }
+        } catch (tiktokError) {
+          console.error('TikTok publishing failed:', tiktokError.message);
+          publishResults.tiktok = { error: tiktokError.message };
         }
       } else {
         console.log('No TikTok account found for user:', post.userId);
+        publishResults.tiktok = { error: 'No TikTok account connected' };
       }
     }
     
@@ -85,17 +106,21 @@ async function tryPublishNow(post) {
     if (post.platforms.includes('youtube')) {
       const ytAccount = await YouTubeAccount.findOne({ where: { userId: post.userId } });
       if (ytAccount && ytAccount.accessToken) {
-        const ytResult = await tryPublishToYouTube(post, ytAccount);
-        if (ytResult) {
-          post.youtubeVideoId = ytResult.id;
-          post.status = 'published';
-          post.error = null;
-          await post.save();
-          console.log('Post published to YouTube successfully');
-          return true;
+        try {
+          const ytResult = await tryPublishToYouTube(post, ytAccount);
+          if (ytResult) {
+            post.youtubeVideoId = ytResult.id;
+            publishResults.youtube = ytResult;
+            publishedToAny = true;
+            console.log('Post published to YouTube successfully');
+          }
+        } catch (youtubeError) {
+          console.error('YouTube publishing failed:', youtubeError.message);
+          publishResults.youtube = { error: youtubeError.message };
         }
       } else {
         console.log('No YouTube account found for user:', post.userId);
+        publishResults.youtube = { error: 'No YouTube account connected' };
       }
     }
 
@@ -120,21 +145,17 @@ async function tryPublishNow(post) {
           const linkedinResult = await tryPublishToLinkedIn(post, linkedinAccount);
           if (linkedinResult) {
             post.linkedinPostId = linkedinResult.id;
-            post.status = 'published';
-            post.error = null;
-            await post.save();
+            publishResults.linkedin = linkedinResult;
+            publishedToAny = true;
             console.log('Post published to LinkedIn successfully');
-            return true;
           }
         } catch (linkedinError) {
           console.error('LinkedIn publishing failed:', linkedinError.message);
-          post.error = linkedinError.message;
-          await post.save();
+          publishResults.linkedin = { error: linkedinError.message };
         }
       } else {
         console.log('No active LinkedIn account found for user:', post.userId);
-        post.error = 'No active LinkedIn account found';
-        await post.save();
+        publishResults.linkedin = { error: 'No active LinkedIn account found' };
       }
     }
 
@@ -157,16 +178,20 @@ async function tryPublishNow(post) {
           const data = await resp.json();
           if (resp.ok && data?.data?.id) {
             post.twitterPostId = data.data.id;
-            post.status = 'published';
-            post.error = null;
-            await post.save();
-            return true;
+            publishResults.twitter = { id: data.data.id };
+            publishedToAny = true;
+            console.log('Post published to Twitter successfully');
           } else {
             console.log('Twitter publish failed:', data);
+            publishResults.twitter = { error: data?.detail || 'Twitter publish failed' };
           }
+        } else {
+          console.log('No Twitter account found for user:', post.userId);
+          publishResults.twitter = { error: 'No Twitter account connected' };
         }
       } catch (e) {
         console.log('Twitter publish error:', e?.message || e);
+        publishResults.twitter = { error: e?.message || 'Twitter publish error' };
       }
     }
 
@@ -191,22 +216,28 @@ async function tryPublishNow(post) {
           const pinterestResult = await tryPublishToPinterest(post, pinterestAccount);
           if (pinterestResult) {
             post.pinterestPostId = pinterestResult.id;
-            post.status = 'published';
-            post.error = null;
-            await post.save();
+            publishResults.pinterest = pinterestResult;
+            publishedToAny = true;
             console.log('Post published to Pinterest successfully');
-            return true;
           }
         } catch (pinterestError) {
           console.error('Pinterest publishing failed:', pinterestError.message);
-          post.error = pinterestError.message;
-          await post.save();
+          publishResults.pinterest = { error: pinterestError.message };
         }
       } else {
         console.log('No active Pinterest account found for user:', post.userId);
-        post.error = 'No active Pinterest account found';
-        await post.save();
+        publishResults.pinterest = { error: 'No active Pinterest account found' };
       }
+    }
+
+    // Update post status based on results
+    if (publishedToAny) {
+      post.status = 'published';
+      post.error = null;
+      await post.save();
+      console.log('Post published successfully to at least one platform');
+      console.log('Publish results:', publishResults);
+      return true;
     }
 
     // If we reach here, none of the enabled platforms succeeded
@@ -221,8 +252,9 @@ async function tryPublishNow(post) {
     }
 
     console.log('No platforms succeeded for this post; marking as failed');
+    console.log('Publish results:', publishResults);
     post.status = 'failed';
-    post.error = post.error || 'No platform could publish this post';
+    post.error = 'No platform could publish this post';
     await post.save();
     return false;
   } catch (e) {
@@ -709,17 +741,45 @@ async function tryPublishToYouTube(post, account) {
       clientSecret || process.env.GOOGLE_CLIENT_SECRET,
       redirectUri || process.env.GOOGLE_REDIRECT_URI || `${process.env.API_URL || 'http://localhost:4000'}/auth/youtube/callback`
     );
+    
+    // Set the correct scopes for YouTube API
+    oauth2Client.scopes = [
+      'https://www.googleapis.com/auth/youtube.upload',
+      'https://www.googleapis.com/auth/youtube',
+      'https://www.googleapis.com/auth/youtube.readonly'
+    ];
+    
     oauth2Client.setCredentials({
       access_token: account.accessToken,
       refresh_token: account.refreshToken
     });
+    
+    // Try to refresh the token if it's expired
+    try {
+      await oauth2Client.getAccessToken();
+    } catch (refreshError) {
+      console.log('Token refresh failed, proceeding with existing token:', refreshError.message);
+    }
 
     const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+
+    // Test the connection first
+    try {
+      const channelsResp = await youtube.channels.list({ mine: true, part: ['id'] });
+      if (!channelsResp.data.items || channelsResp.data.items.length === 0) {
+        throw new Error('No YouTube channels found for this account');
+      }
+      console.log('YouTube connection test successful');
+    } catch (connectionError) {
+      console.error('YouTube connection test failed:', connectionError.message);
+      throw new Error(`YouTube connection failed: ${connectionError.message}`);
+    }
 
     // Use Resumable upload with external video URL is not supported directly.
     // For simplicity, we pass the mediaUrl as file URL; in production, download then stream.
     // Here, we attempt using simple insert with media body via external fetch stream.
     // Pre-fetch media and create a readable stream (not a Promise)
+    console.log('Fetching video from URL:', post.mediaUrl);
     const fetchResp = await fetch(post.mediaUrl);
     if (!fetchResp.ok) {
       throw new Error(`Failed to fetch media: ${fetchResp.status}`);
@@ -727,6 +787,7 @@ async function tryPublishToYouTube(post, account) {
     const mediaBuffer = Buffer.from(await fetchResp.arrayBuffer());
     const { Readable } = require('stream');
     const mediaStream = Readable.from(mediaBuffer);
+    console.log('Video buffer size:', mediaBuffer.length, 'bytes');
 
     const res = await youtube.videos.insert({
       part: ['snippet,status'],
@@ -1174,9 +1235,47 @@ function startScheduler() {
     // Every minute: publish any due scheduled posts
   cron.schedule('* * * * *', async () => {
     const now = new Date();
-    const due = await Post.findAll({ where: { status: 'scheduled', scheduledAt: { [Op.lte]: now } }, limit: 20 });
-    for (const post of due) {
-      await tryPublishNow(post);
+    console.log(`[Scheduler] Checking for scheduled posts at ${now.toISOString()}`);
+    
+    try {
+      const due = await Post.findAll({ 
+        where: { 
+          status: 'scheduled', 
+          scheduledAt: { [Op.lte]: now } 
+        }, 
+        limit: 20 
+      });
+      
+      if (due.length > 0) {
+        console.log(`[Scheduler] Found ${due.length} due posts to publish`);
+        
+        for (const post of due) {
+          console.log(`[Scheduler] Publishing scheduled post ${post.id} to platforms: ${post.platforms.join(', ')}`);
+          try {
+            const result = await tryPublishNow(post);
+            if (result) {
+              console.log(`✅ [Scheduler] Post ${post.id} published successfully`);
+              post.status = 'published';
+              post.error = null;
+              await post.save();
+            } else {
+              console.log(`❌ [Scheduler] Post ${post.id} failed to publish`);
+              post.status = 'failed';
+              post.error = 'Failed to publish to any platform';
+              await post.save();
+            }
+          } catch (error) {
+            console.error(`❌ [Scheduler] Error publishing post ${post.id}:`, error.message);
+            post.status = 'failed';
+            post.error = error.message;
+            await post.save();
+          }
+        }
+      } else {
+        console.log(`[Scheduler] No due posts found`);
+      }
+    } catch (schedulerError) {
+      console.error(`[Scheduler] Error in scheduler:`, schedulerError.message);
     }
     
     // Clean up old published posts (older than 30 days)

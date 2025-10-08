@@ -323,7 +323,12 @@ async function start() {
     process.exit(1);
   }
   // Start scheduler after DB is ready
-  try { require('./scheduler').startScheduler(); } catch {}
+  try { 
+    require('./scheduler').startScheduler(); 
+    console.log('✅ Scheduler started successfully');
+  } catch (schedulerError) {
+    console.error('❌ Failed to start scheduler:', schedulerError.message);
+  }
   
   // Clean old conversations every 24 hours
   setInterval(async () => {
