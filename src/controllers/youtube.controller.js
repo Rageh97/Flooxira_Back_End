@@ -204,13 +204,80 @@ async function testYouTubeConnection(req, res) {
   }
 }
 
+// Get YouTube channel details with statistics
+async function getYouTubeChannelDetails(req, res) {
+  try {
+    const account = await YouTubeAccount.findOne({ where: { userId: req.userId } });
+    if (!account) {
+      return res.status(404).json({ success: false, message: 'No YouTube account connected' });
+    }
+
+    if (!account.channelId) {
+      return res.json({
+        success: true,
+        title: account.channelTitle || 'YouTube Channel',
+        statistics: {
+          subscriberCount: '0',
+          videoCount: '0',
+          viewCount: '0'
+        }
+      });
+    }
+
+    // Try to fetch live statistics
+    try {
+      const oauth2Client = getOAuthClient(req.userId);
+      oauth2Client.setCredentials({
+        access_token: account.accessToken,
+        refresh_token: account.refreshToken
+      });
+
+      const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+      const channelResp = await youtube.channels.list({
+        id: [account.channelId],
+        part: ['snippet', 'statistics']
+      });
+
+      const channel = channelResp.data.items?.[0];
+      if (channel) {
+        return res.json({
+          success: true,
+          title: channel.snippet.title,
+          statistics: channel.statistics || {
+            subscriberCount: '0',
+            videoCount: '0',
+            viewCount: '0'
+          }
+        });
+      }
+    } catch (apiError) {
+      console.log('YouTube API call failed, using cached data:', apiError.message);
+    }
+
+    // Fallback to cached data
+    return res.json({
+      success: true,
+      title: account.channelTitle || 'YouTube Channel',
+      statistics: {
+        subscriberCount: '0',
+        videoCount: '0',
+        viewCount: '0'
+      }
+    });
+  } catch (error) {
+    console.error('Error getting YouTube channel details:', error);
+    return res.status(400).json({ success: false, message: 'Failed to get channel details' });
+  }
+}
+
 module.exports = { 
   exchangeCode, 
   getYouTubeAccount, 
   disconnectYouTube, 
   testYouTubeConnection,
   getYouTubeChannels,
-  selectYouTubeChannel
+  selectYouTubeChannel,
+  getYouTubeChannelDetails
 };
 
 

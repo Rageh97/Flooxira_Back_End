@@ -29,6 +29,7 @@ router.get('/data', ctrl.listData);
 router.put('/data/:id', ctrl.updateData);
 router.delete('/data/:id', ctrl.deleteData);
 router.post('/upload', upload.single('file'), ctrl.uploadExcel);
+router.get('/export', ctrl.exportData);
 
 // List available Gemini models for the provided GOOGLE_API_KEY
 router.get('/llm/models', async (req, res) => {

@@ -35,7 +35,38 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, requireAdmin };
+async function requireEmployeeAuth(req, res, next) {
+  try {
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!token) return res.status(401).json({ message: 'Unauthorized' });
+    const payload = jwt.verify(token, JWT_SECRET);
+    
+    // Check if it's an employee
+    if (payload.role === 'employee') {
+      const { Employee } = require('../models/employee');
+      const employee = await Employee.findByPk(payload.sub);
+      if (!employee || !employee.isActive) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      req.employeeId = employee.id;
+      req.ownerId = employee.ownerId;
+      req.userId = employee.ownerId; // Set owner as the main user
+      req.employee = employee;
+    } else {
+      // Regular user
+      const user = await User.findByPk(payload.sub);
+      if (!user) return res.status(401).json({ message: 'Unauthorized' });
+      req.userId = user.id;
+    }
+    
+    next();
+  } catch (e) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+}
+
+module.exports = { requireAuth, requireAdmin, requireEmployeeAuth };
 
 
 

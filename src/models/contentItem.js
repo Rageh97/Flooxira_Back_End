@@ -57,10 +57,13 @@ const ContentItem = sequelize.define('ContentItem', {
   ]
 });
 
-User.hasMany(ContentItem, { foreignKey: 'userId' });
+User.hasMany(ContentItem, { foreignKey: 'userId', onDelete: 'CASCADE' });
 ContentItem.belongsTo(User, { foreignKey: 'userId' });
-ContentCategory.hasMany(ContentItem, { foreignKey: 'categoryId' });
+ContentCategory.hasMany(ContentItem, { foreignKey: 'categoryId', onDelete: 'CASCADE' });
 ContentItem.belongsTo(ContentCategory, { foreignKey: 'categoryId' });
+
+// Add association for Reminders (will be set up in reminder.js)
+// ContentItem.hasMany(Reminder, { foreignKey: 'contentItemId', onDelete: 'CASCADE' });
 
 module.exports = { ContentItem };
 

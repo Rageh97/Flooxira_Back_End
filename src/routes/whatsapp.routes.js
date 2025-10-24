@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireEmployeeAuth } = require('../middleware/auth');
 const { 
   requireActiveSubscription, 
   requireWhatsAppManagement,
@@ -11,7 +11,7 @@ const upload = multer({ dest: 'uploads/tmp' });
 
 const router = Router();
 
-router.use(requireAuth);
+router.use(requireEmployeeAuth);
 router.use(requireActiveSubscription);
 router.use(requireWhatsAppManagement);
 

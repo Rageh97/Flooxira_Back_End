@@ -830,6 +830,53 @@ async function createLinkedInPostWithImage(req, res) {
   }
 }
 
+// Get LinkedIn profile details
+async function getLinkedInProfile(req, res) {
+  try {
+    const userId = req.userId;
+    
+    const account = await LinkedInAccount.findOne({ where: { userId } });
+    if (!account || !account.accessToken) {
+      return res.status(400).json({ success: false, message: 'Failed to get LinkedIn profile' });
+    }
+
+    const accessToken = crypto.decrypt(account.accessToken);
+
+    // Try to get profile info
+    try {
+      const userInfoResponse = await fetchWithRetry('https://api.linkedin.com/v2/userinfo', {
+        headers: { 
+          Authorization: `Bearer ${accessToken}`
+        }
+      });
+
+      if (userInfoResponse.ok) {
+        const userData = await userInfoResponse.json();
+        return res.json({
+          success: true,
+          profile: userData,
+          name: userData.name || `${userData.given_name || ''} ${userData.family_name || ''}`.trim()
+        });
+      }
+    } catch (error) {
+      console.log('OpenID Connect failed, trying traditional endpoint:', error.message);
+    }
+
+    // Fallback to account data
+    return res.json({
+      success: true,
+      profile: {
+        id: account.linkedinUserId,
+        name: account.name
+      },
+      name: account.name
+    });
+  } catch (error) {
+    console.error('Error getting LinkedIn profile:', error);
+    return res.status(400).json({ success: false, message: 'Failed to get LinkedIn profile' });
+  }
+}
+
 module.exports = {
   exchangeCode,
   getLinkedInAccount,
@@ -839,5 +886,6 @@ module.exports = {
   createLinkedInPostWithImage,
   getLinkedInPosts,
   getLinkedInAnalytics,
-  getLinkedInCompanies
+  getLinkedInCompanies,
+  getLinkedInProfile
 };

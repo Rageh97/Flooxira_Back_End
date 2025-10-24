@@ -791,7 +791,7 @@ async function startCampaign(req, res) {
     const files = req.files || {};
     const excelFile = Array.isArray(files?.file) ? files.file[0] : null;
     const mediaFile = Array.isArray(files?.media) ? files.media[0] : null;
-    const { messageTemplate, throttleMs, scheduleAt, dailyCap, perNumberDelayMs, timezoneOffset } = req.body || {};
+    const { messageTemplate, throttleMs, scheduleAt, dailyCap, perNumberDelayMs, timezoneOffset, isRecurring, recurringInterval } = req.body || {};
     if (!excelFile) return res.status(400).json({ success: false, message: 'Excel file required' });
     const wb = xlsx.readFile(excelFile.path);
     const ws = wb.Sheets[wb.SheetNames[0]];
@@ -856,7 +856,13 @@ async function startCampaign(req, res) {
         await WhatsappSchedule.create({
           userId,
           type: 'campaign',
-          payload: { rows, messageTemplate, throttleMs: perDelay },
+          payload: { 
+            rows, 
+            messageTemplate, 
+            throttleMs: perDelay,
+            isRecurring: isRecurring === 'true',
+            recurringInterval: recurringInterval ? parseInt(recurringInterval) : null
+          },
           mediaPath,
           scheduledAt: scheduledDate,
           status: 'pending'

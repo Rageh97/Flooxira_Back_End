@@ -30,7 +30,13 @@ const FacebookAccount = sequelize.define('FacebookAccount', {
   },
   accessToken: {
     type: DataTypes.TEXT,
-    allowNull: false
+    allowNull: false,
+    comment: 'User access token for getting pages list'
+  },
+  pageAccessToken: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'Page-specific access token for publishing'
   },
   tokenExpiresAt: {
     type: DataTypes.DATE,

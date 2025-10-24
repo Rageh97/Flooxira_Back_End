@@ -13,8 +13,10 @@ const path = require('path');
 const fs = require('fs');
 const xlsx = require('xlsx');
 const { searchOrAnswer } = require('../services/botSearchService');
+const limitService = require('./limitService');
 const conversationService = require('./conversationService');
 const { WhatsappTemplate, WhatsappTemplateButton } = require('../models/whatsappTemplate');
+const { BotSettings } = require('../models/botSettings');
 
 // OpenAI client (conditional)
 let openai = null;
@@ -68,6 +70,8 @@ class WhatsAppService {
     this.userStates = new Map();
     this.messageCounters = new Map();
     this.qrCodes = new Map(); // Store QR codes for each user
+    this.conversationLocks = new Map(); // Track active conversations to prevent multiple responses
+    this.lastMessageTime = new Map(); // Track last message time per conversation
     this.setupErrorHandlers();
   }
 
@@ -103,6 +107,50 @@ class WhatsAppService {
       }
       console.error('Uncaught Exception:', error);
     });
+  }
+
+  // Check if current time is within working hours
+  async isWithinWorkingHours(userId) {
+    try {
+      const settings = await BotSettings.findOne({ where: { userId } });
+      
+      if (!settings || !settings.workingHoursEnabled) {
+        return { isWorkingHours: true, message: null };
+      }
+
+      const now = new Date();
+      const timezone = settings.timezone || 'Asia/Riyadh';
+      
+      // Convert to user's timezone
+      const userTime = new Date(now.toLocaleString("en-US", { timeZone: timezone }));
+      const currentDay = userTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
+      const currentTime = userTime.toTimeString().split(' ')[0]; // HH:MM:SS format
+      
+      // Check if today is a working day
+      const workingDays = settings.workingDays || [1, 2, 3, 4, 5]; // Default: Monday to Friday
+      if (!workingDays.includes(currentDay)) {
+        return { 
+          isWorkingHours: false, 
+          message: settings.outsideWorkingHoursMessage || 'نعتذر، نحن خارج أوقات العمل. سنرد عليك في أقرب وقت ممكن.'
+        };
+      }
+
+      // Check if current time is within working hours
+      const startTime = settings.workingHoursStart || '09:00:00';
+      const endTime = settings.workingHoursEnd || '17:00:00';
+      
+      if (currentTime < startTime || currentTime > endTime) {
+        return { 
+          isWorkingHours: false, 
+          message: settings.outsideWorkingHoursMessage || 'نعتذر، نحن خارج أوقات العمل. سنرد عليك في أقرب وقت ممكن.'
+        };
+      }
+
+      return { isWorkingHours: true, message: null };
+    } catch (error) {
+      console.error('Error checking working hours:', error);
+      return { isWorkingHours: true, message: null }; // Default to working hours if error
+    }
   }
 
   async startSession(userId, options = {}) {
@@ -473,6 +521,39 @@ class WhatsAppService {
 
   async handleIncomingMessage(message, userId) {
     try {
+      // Create a unique conversation key
+      const conversationKey = `${userId}_${message.from}`;
+      const now = Date.now();
+      
+      // Check if we're already processing a message for this conversation
+      if (this.conversationLocks.has(conversationKey)) {
+        console.log(`[WA] Conversation ${conversationKey} is already being processed, ignoring duplicate message`);
+        return;
+      }
+      
+      // Check for rapid successive messages (within 3 seconds)
+      const lastTime = this.lastMessageTime.get(conversationKey) || 0;
+      if (now - lastTime < 3000) {
+        console.log(`[WA] Rapid successive message from ${conversationKey}, ignoring to prevent spam`);
+        return;
+      }
+      
+      // Update last message time
+      this.lastMessageTime.set(conversationKey, now);
+      
+      // Set conversation lock
+      this.conversationLocks.set(conversationKey, true);
+      
+      // Auto-release lock after 5 seconds to prevent permanent locks
+      setTimeout(() => {
+        this.conversationLocks.delete(conversationKey);
+      }, 5000);
+      
+      console.log(`[WA] Processing message from ${message.from}: ${message.body}`);
+      
+      // Always save incoming message first, regardless of bot status
+      await conversationService.saveMessage(userId, message.from, 'incoming', message.body);
+      
       // Check if bot is paused for this user
       const user = await User.findByPk(userId);
       if (user && user.botPaused) {
@@ -482,31 +563,43 @@ class WhatsAppService {
           await user.update({ botPaused: false, botPausedUntil: null });
           console.log(`[WA] Bot resumed for user ${userId} - pause expired`);
         } else {
-          // Bot is still paused, don't respond
-          console.log(`[WA] Bot is paused for user ${userId}, ignoring message from ${message.from}`);
+          // Bot is still paused, don't respond but message is already saved
+          console.log(`[WA] Bot is paused for user ${userId}, message saved but no response sent to ${message.from}`);
+          this.conversationLocks.delete(conversationKey);
           return;
         }
       }
-      
-      // Track message count
-      const currentCount = this.messageCounters.get(userId) || 0;
-      this.messageCounters.set(userId, currentCount + 1);
-      
-      console.log(`[WA] Processing message #${currentCount + 1} from ${message.from}: ${message.body}`);
-      
-      // Save incoming message with conversation context
-      await conversationService.saveMessage(userId, message.from, 'incoming', message.body);
+
+      // Check working hours
+      const workingHoursCheck = await this.isWithinWorkingHours(userId);
+      if (!workingHoursCheck.isWorkingHours) {
+        console.log(`[WA] Outside working hours for user ${userId}, sending message: ${workingHoursCheck.message}`);
+        // Send outside working hours message
+        const client = this.userClients.get(userId);
+        if (client) {
+          try {
+            await client.sendMessage(message.from, workingHoursCheck.message);
+            // Log the message
+            await conversationService.saveMessage(userId, message.from, 'outgoing', workingHoursCheck.message, 'working_hours');
+          } catch (error) {
+            console.error(`[WA] Failed to send working hours message:`, error);
+          }
+        }
+        this.conversationLocks.delete(conversationKey);
+        return;
+      }
       
       // Check for template triggers first
       const templateResponse = await this.checkTemplateTriggers(userId, message.body, message.from);
       if (templateResponse === 'TEMPLATE_SENT') {
         // Template with interactive buttons was sent, no need to send additional message
-        await conversationService.saveMessage(userId, message.from, 'outgoing', 'Interactive template sent', 'template');
+        // Log template message (not sent via sendMessage so we need to log it manually)
+        await this.logChatMessage(userId, message.from, 'outgoing', 'Interactive template sent', 'template', null);
         return;
       } else if (templateResponse) {
         // Fallback to old method if interactive buttons failed
+        // sendMessage will log the message, so no need to call saveMessage again
         await this.sendMessage(userId, message.from, templateResponse);
-        await conversationService.saveMessage(userId, message.from, 'outgoing', templateResponse, 'template');
         return;
       }
 
@@ -517,8 +610,8 @@ class WhatsAppService {
       if (!isNaN(buttonNumber) && buttonNumber > 0 && buttonNumber <= 10) {
         const buttonResponse = await this.handleTemplateButtonSelection(userId, message.from, buttonNumber);
         if (buttonResponse) {
+          // sendMessage will log the message, so no need to call saveMessage again
           await this.sendMessage(userId, message.from, buttonResponse);
-          await conversationService.saveMessage(userId, message.from, 'outgoing', buttonResponse, 'template');
           return;
         }
       }
@@ -567,8 +660,7 @@ class WhatsAppService {
             }
           });
           
-          // Add marketing persuasion for Chance Play
-          productDetails += `\n✨ هذا المنتج مميز جداً ويستحق الشراء!\n🛡️ عندك ضمان كامل وخدمة عملاء ممتازة في شانس بلاي\n🚚 توصيل سريع لجميع أنحاء المملكة\n🎮 شانس بلاي - منصة الألعاب والترفيه الرقمي المفضلة`;
+          // No hardcoded marketing messages - use user settings instead
           
           response = productDetails;
           responseSource = 'knowledge_base';
@@ -617,11 +709,39 @@ class WhatsAppService {
       // If still nothing, final LLM fallback: OpenAI then Gemini
       if (!response) {
         try {
+          // Get user bot settings for personalized responses
+          const userSettings = await BotSettings.findOne({ where: { userId } });
+          
+          // Build system prompt based on user settings
+          let systemPrompt = "أنت مساعد ذكي لخدمة العملاء.";
+          
+          if (userSettings) {
+            if (userSettings.personality === 'professional') {
+              systemPrompt += " استخدم أسلوب مهني ورسمي.";
+            } else if (userSettings.personality === 'friendly') {
+              systemPrompt += " استخدم أسلوب ودود ومرح.";
+            } else if (userSettings.personality === 'marketing') {
+              systemPrompt += " ركز على البيع والإقناع.";
+            }
+            
+            if (userSettings.language === 'arabic') {
+              systemPrompt += " استخدم اللغة العربية فقط.";
+            } else if (userSettings.language === 'english') {
+              systemPrompt += " استخدم اللغة الإنجليزية فقط.";
+            }
+            
+            if (userSettings.includeEmojis) {
+              systemPrompt += " استخدم الإيموجي في الردود.";
+            }
+          }
+          
+          systemPrompt += " إذا لم تجد المنتج/الخدمة المطلوبة، اعتذر وأخبره أن الخدمة ستتوفر قريباً. إذا قال 'مستعد' أو 'بدي اشتريها'، قدم رابط الشراء مباشرة. كن مختصراً واحترافياً، لا تكرر الترحيب.";
+          
           if (openai) {
           const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
-                { role: "system", content: "أنت سلمى، موظفة خدمة العملاء في منصة شانس بلاي المتخصصة في الألعاب والترفيه الرقمي. استخدم اللهجة السعودية العامية فقط. إذا لم تجد المنتج/الخدمة المطلوبة، اعتذر وأخبره أن الخدمة ستتوفر قريباً. إذا اشتكى من السعر، اقنعه بجودة المنتج والضمان وخدمة العملاء المميزة في شانس بلاي. إذا سأل عن كوبون، ابحث في البيانات أولاً. إذا قال 'مستعد' أو 'بدي اشتريها'، قدم رابط الشراء مباشرة. كن مختصراً واحترافياً، لا تكرر الترحيب." },
+                { role: "system", content: systemPrompt },
                 { role: "user", content: message.body }
             ],
             max_tokens: 150
@@ -629,7 +749,7 @@ class WhatsAppService {
           response = completion.choices[0].message.content;
           responseSource = 'openai';
           } else if (geminiModel) {
-            const prompt = "أنت سلمى، موظفة خدمة العملاء في منصة شانس بلاي المتخصصة في الألعاب والترفيه الرقمي. استخدم اللهجة السعودية العامية فقط. إذا لم تجد المنتج/الخدمة المطلوبة، اعتذر وأخبره أن الخدمة ستتوفر قريباً. إذا اشتكى من السعر، اقنعه بجودة المنتج والضمان وخدمة العملاء المميزة في شانس بلاي. إذا سأل عن كوبون، ابحث في البيانات أولاً. إذا قال 'مستعد' أو 'بدي اشتريها'، قدم رابط الشراء مباشرة. كن مختصراً واحترافياً، لا تكرر الترحيب.\n\n" + message.body;
+            const prompt = systemPrompt + "\n\n" + message.body;
             try {
               const result = await geminiModel.generateContent(prompt);
               const text = result?.response?.text?.() || result?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -677,14 +797,44 @@ class WhatsAppService {
 
       // Send response (with 3s delay) and log it
       if (response) {
+        // Check limits before sending bot response
+        const limitCheck = await limitService.canSendMessage(userId, 'whatsapp');
+        if (!limitCheck.canSend) {
+          console.log(`[WA] Bot response blocked due to limit: ${limitCheck.reason}`);
+          // Don't send response if limit reached
+          return;
+        }
+
         // Delay 3 seconds before replying
         await new Promise(r => setTimeout(r, 3000));
-        await this.sendMessage(userId, message.from, response);
-        await conversationService.saveMessage(userId, message.from, 'outgoing', response, responseSource, knowledgeBaseMatch);
+        const sendResult = await this.sendMessage(userId, message.from, response);
+        
+        // Only record usage if message was sent successfully
+        // Note: sendMessage already logs the message to database via logChatMessage
+        // So we don't call conversationService.saveMessage here to prevent duplicates
+        if (sendResult === true) {
+          // Record message usage for bot AI response
+          await limitService.recordMessageUsage(userId, 'whatsapp', 'bot_response', 1, {
+            responseSource: responseSource,
+            contactNumber: message.from
+          });
+          console.log(`[WA] Bot response recorded in usage stats for user ${userId}`);
+        }
       }
 
     } catch (error) {
       console.error('Message handling error:', error);
+    } finally {
+      // Always release the conversation lock
+      this.conversationLocks.delete(conversationKey);
+      
+      // Clean up old message times (older than 1 hour)
+      const oneHourAgo = Date.now() - (60 * 60 * 1000);
+      for (const [key, time] of this.lastMessageTime.entries()) {
+        if (time < oneHourAgo) {
+          this.lastMessageTime.delete(key);
+        }
+      }
     }
   }
 
@@ -865,6 +1015,13 @@ class WhatsAppService {
 
   async sendMessage(userId, to, message) {
     try {
+      // Check message limits first
+      const limitCheck = await limitService.canSendMessage(userId, 'whatsapp');
+      if (!limitCheck.canSend) {
+        console.log(`[WA] Message limit reached for user ${userId}: ${limitCheck.reason}`);
+        return { success: false, error: limitCheck.reason, limitReached: true };
+      }
+
       const client = this.userClients.get(userId);
       if (!client) {
         console.log(`[WA] No client available for user ${userId}`);
@@ -911,6 +1068,8 @@ class WhatsAppService {
         await attemptSend();
         // Log the sent message to database
         await this.logChatMessage(userId, to, 'outgoing', message, 'manual', null);
+        // Record message usage
+        await limitService.recordMessageUsage(userId, 'whatsapp', 'outgoing', 1);
         return true;
       } catch (sendErr) {
         console.log(`[WA] First send attempt failed to ${chatId}:`, sendErr?.message || sendErr);
@@ -920,6 +1079,8 @@ class WhatsAppService {
           await attemptSend();
           // Log the sent message to database
           await this.logChatMessage(userId, to, 'outgoing', message, 'manual', null);
+          // Record message usage
+          await limitService.recordMessageUsage(userId, 'whatsapp', 'outgoing', 1);
           return true;
         } catch (retryErr) {
           console.log(`[WA] Retry send failed to ${chatId}:`, retryErr?.message || retryErr);
@@ -1038,7 +1199,10 @@ class WhatsAppService {
   async getChatContacts(userId) {
     try {
       const contacts = await WhatsappChat.findAll({
-        where: { userId },
+        where: { 
+          userId,
+          messageType: 'outgoing' // Only count bot responses (outgoing messages)
+        },
         attributes: [
           'contactNumber',
           [sequelize.fn('COUNT', sequelize.col('id')), 'messageCount'],
@@ -1064,12 +1228,24 @@ class WhatsAppService {
 
   async getBotStats(userId) {
     try {
-      const stats = await WhatsappChat.findAll({
+      // Get all messages for total count
+      const allStats = await WhatsappChat.findAll({
         where: { userId },
         attributes: [
           [sequelize.fn('COUNT', sequelize.col('id')), 'totalMessages'],
           [sequelize.fn('COUNT', sequelize.literal('CASE WHEN messageType = "incoming" THEN 1 END')), 'incomingMessages'],
-          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN messageType = "outgoing" THEN 1 END')), 'outgoingMessages'],
+          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN messageType = "outgoing" THEN 1 END')), 'outgoingMessages']
+        ],
+        raw: true
+      });
+
+      // Get bot responses only (outgoing messages with response source)
+      const botStats = await WhatsappChat.findAll({
+        where: { 
+          userId,
+          messageType: 'outgoing' // Only bot responses
+        },
+        attributes: [
           [sequelize.fn('COUNT', sequelize.literal('CASE WHEN responseSource = "knowledge_base" THEN 1 END')), 'knowledgeBaseResponses'],
           [sequelize.fn('COUNT', sequelize.literal('CASE WHEN responseSource = "openai" THEN 1 END')), 'openaiResponses'],
           [sequelize.fn('COUNT', sequelize.literal('CASE WHEN responseSource = "fallback" THEN 1 END')), 'fallbackResponses']
@@ -1086,13 +1262,13 @@ class WhatsAppService {
       return {
         success: true,
         stats: {
-          totalMessages: parseInt(stats[0].totalMessages) || 0,
-          incomingMessages: parseInt(stats[0].incomingMessages) || 0,
-          outgoingMessages: parseInt(stats[0].outgoingMessages) || 0,
+          totalMessages: parseInt(allStats[0].totalMessages) || 0,
+          incomingMessages: parseInt(allStats[0].incomingMessages) || 0,
+          outgoingMessages: parseInt(allStats[0].outgoingMessages) || 0,
           totalContacts: totalContacts,
-          knowledgeBaseResponses: parseInt(stats[0].knowledgeBaseResponses) || 0,
-          openaiResponses: parseInt(stats[0].openaiResponses) || 0,
-          fallbackResponses: parseInt(stats[0].fallbackResponses) || 0
+          knowledgeBaseResponses: parseInt(botStats[0].knowledgeBaseResponses) || 0,
+          openaiResponses: parseInt(botStats[0].openaiResponses) || 0,
+          fallbackResponses: parseInt(botStats[0].fallbackResponses) || 0
         }
       };
     } catch (error) {
@@ -1228,6 +1404,13 @@ class WhatsAppService {
     try {
       const client = this.userClients.get(userId);
       if (!client) return { success: false, message: 'Client not connected' };
+      
+      // Check if user can send campaign messages
+      const limitCheck = await limitService.canSendMessage(userId, 'whatsapp');
+      if (!limitCheck.canSend) {
+        return { success: false, message: limitCheck.reason, limitReached: true };
+      }
+      
       let sent = 0, failed = 0;
       for (const row of rows) {
         const raw = String(row.phone || row.number || '').replace(/\D/g, '');
@@ -1259,7 +1442,13 @@ class WhatsAppService {
         } else {
           ok = await this.sendMessage(userId, raw, personalized || '');
         }
-        if (ok) sent++; else failed++;
+        if (ok) {
+          sent++;
+          // Record message usage for campaign
+          await limitService.recordMessageUsage(userId, 'whatsapp', 'campaign', 1);
+        } else {
+          failed++;
+        }
         await new Promise(r => setTimeout(r, throttleMs));
       }
       return { success: true, summary: { sent, failed, total: rows.length } };
@@ -1335,6 +1524,98 @@ class WhatsAppService {
     } catch (error) {
       console.error(`[WA] Failed to resume bot for user ${userId}:`, error);
       return false;
+    }
+  }
+
+  // Send WhatsApp Status Update (Story)
+  async sendStatusUpdate(userId, buffer, filename, mimetype, caption = '') {
+    try {
+      const client = this.userClients.get(userId);
+      if (!client) {
+        console.log(`[WA] No client available for user ${userId}`);
+        return { success: false, error: 'WhatsApp session not active' };
+      }
+
+      // Check client state
+      try {
+        const state = await client.getState();
+        if (state !== 'CONNECTED') {
+          console.log(`[WA] Client state is ${state} for user ${userId}`);
+          return { success: false, error: `WhatsApp not connected (state: ${state})` };
+        }
+      } catch (e) {
+        console.log(`[WA] Could not verify client state for user ${userId}:`, e?.message);
+        return { success: false, error: 'Could not verify WhatsApp connection' };
+      }
+
+      // Create MessageMedia from buffer
+      const { MessageMedia } = require('whatsapp-web.js');
+      const media = new MessageMedia(mimetype, buffer.toString('base64'), filename);
+      
+      console.log(`[WA] Sending status update for user ${userId}:`, {
+        filename,
+        mimetype,
+        size: buffer.length,
+        base64Length: buffer.toString('base64').length,
+        hasCaption: !!caption
+      });
+
+      // Try to send status update using different methods
+      let result;
+      let method = 'unknown';
+      
+      try {
+        // Method 1: Try using sendMessage to status@broadcast (most common)
+        console.log(`[WA] Attempting Method 1: status@broadcast`);
+        result = await client.sendMessage('status@broadcast', media, { 
+          caption: caption || undefined,
+          sendMediaAsSticker: false,
+          sendMediaAsDocument: false
+        });
+        method = 'status@broadcast';
+        console.log(`[WA] ✅ Method 1 succeeded - Status sent via status@broadcast`);
+      } catch (error1) {
+        console.error(`[WA] ❌ Method 1 failed:`, error1.message);
+        
+        // Method 2: Try getting my status and sending
+        try {
+          console.log(`[WA] Attempting Method 2: Direct status API`);
+          const myNumber = await client.info.wid._serialized;
+          console.log(`[WA] My number:`, myNumber);
+          
+          // Some versions support direct status API
+          if (typeof client.sendStatusUpdate === 'function') {
+            result = await client.sendStatusUpdate(media, { caption });
+            method = 'direct-api';
+            console.log(`[WA] ✅ Method 2 succeeded - Status sent via direct API`);
+          } else {
+            throw new Error('Direct status API not available');
+          }
+        } catch (error2) {
+          console.error(`[WA] ❌ Method 2 failed:`, error2.message);
+          
+          // Method 3: Last resort - send to yourself as a workaround indicator
+          console.warn(`[WA] ⚠️ Status posting may not be supported in this WhatsApp Web version`);
+          console.warn(`[WA] ⚠️ Please note: WhatsApp Web.js may have limited status/story support`);
+          throw new Error('Status posting is not supported in the current WhatsApp Web session. This is a limitation of WhatsApp Web.js library.');
+        }
+      }
+      
+      console.log(`[WA] Status update sent successfully for user ${userId} using method: ${method}`);
+      console.log(`[WA] Result ID:`, result?.id?._serialized || 'N/A');
+      
+      return {
+        success: true,
+        id: result?.id?._serialized || `status_${Date.now()}`,
+        message: `WhatsApp status updated successfully (method: ${method})`,
+        method
+      };
+    } catch (error) {
+      console.error(`[WA] Failed to send status update for user ${userId}:`, error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send status update'
+      };
     }
   }
 }

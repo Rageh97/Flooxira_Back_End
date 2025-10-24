@@ -1,37 +1,33 @@
-const express = require('express');
-const router = express.Router();
+const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
-const {
-  getBotSettings,
-  updateBotSettings,
-  resetBotSettings,
-  testAIResponse,
-  getAvailableModels,
-  getPersonalityTemplates
-} = require('../controllers/botSettings.controller');
+const botSettingsController = require('../controllers/botSettings.controller');
 
-// Apply authentication middleware to all routes
+const router = Router();
 router.use(requireAuth);
 
 // Get bot settings
-router.get('/', getBotSettings);
+router.get('/', botSettingsController.getBotSettings);
 
 // Update bot settings
-router.put('/', updateBotSettings);
+router.put('/', botSettingsController.updateBotSettings);
 
 // Reset bot settings to default
-router.post('/reset', resetBotSettings);
+router.delete('/', botSettingsController.resetBotSettings);
 
 // Test AI response with current settings
-router.post('/test', testAIResponse);
+router.post('/test', botSettingsController.testAIResponse);
 
 // Get available AI models
-router.get('/models', getAvailableModels);
+router.get('/models', botSettingsController.getAvailableModels);
 
 // Get personality templates
-router.get('/templates', getPersonalityTemplates);
+router.get('/templates', botSettingsController.getPersonalityTemplates);
 
 module.exports = router;
+
+
+
+
 
 
 

@@ -49,6 +49,24 @@ const UserSubscription = sequelize.define('UserSubscription', {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false
+  },
+  // Coupon/Discount information
+  couponCode: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  discountType: {
+    type: DataTypes.ENUM('percentage', 'fixed', 'bonus_days'),
+    allowNull: true
+  },
+  discountValue: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true
+  },
+  finalPriceCents: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Final price after discount in cents'
   }
 }, {
   tableName: 'user_subscriptions',

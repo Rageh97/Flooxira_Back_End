@@ -2,12 +2,16 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const {
-  createCoupon,
-  listCoupons,
-  updateCoupon,
-  deleteCoupon,
-  generateCoupons
+createCoupon,
+listCoupons,
+updateCoupon,
+deleteCoupon,
+generateCoupons,
+verifyCoupon
 } = require('../controllers/coupon.controller');
+
+// Public route to verify discount coupon
+router.get('/verify', requireAuth, verifyCoupon);
 
 // Admin routes for coupon management
 router.post('/', requireAuth, createCoupon);

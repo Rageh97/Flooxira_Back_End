@@ -23,17 +23,26 @@ const twitterRoutes = require('./routes/twitter.routes');
 const adminRoutes = require('./routes/admin.routes');
 const telegramBotRoutes = require('./routes/telegram.bot.routes');
 const telegramTemplateRoutes = require('./routes/telegramTemplate.routes');
+const telegramRoutes = require('./routes/telegram.routes');
 const contentRoutes = require('./routes/content.routes');
 const botRoutes = require('./routes/bot.routes');
 const botSettingsRoutes = require('./routes/botSettings.routes');
 const botControlRoutes = require('./routes/botControl.routes');
 const whatsappTemplateRoutes = require('./routes/whatsappTemplate.routes');
+const usageRoutes = require('./routes/usage.routes');
 const tagRoutes = require('./routes/tag.routes');
 const mediaRoutes = require('./routes/media.routes');
 const campaignRoutes = require('./routes/campaign.routes');
 const subscriptionRequestRoutes = require('./routes/subscriptionRequest.routes');
 const couponRoutes = require('./routes/coupon.routes');
 const billingRoutes = require('./routes/billing.routes');
+const tutorialRoutes = require('./routes/tutorial.routes');
+const reviewRoutes = require('./routes/review.routes');
+const customerRoutes = require('./routes/customer.routes');
+const customFieldRoutes = require('./routes/customField.routes');
+const serviceRoutes = require('./routes/service.routes');
+const employeeRoutes = require('./routes/employee.routes');
+const reminderRoutes = require('./routes/reminder.routes');
 const conversationService = require('./services/conversationService');
 const axios = require('axios');
 
@@ -45,13 +54,48 @@ require('./models/botField');
 require('./models/botData');
 require('./models/whatsappTemplate');
 require('./models/telegramTemplate');
+require('./models/customer');
+require('./models/customerInteraction');
+require('./models/customerCategory');
+require('./models/customField');
+require('./models/service');
+require('./models/employee');
+require('./models/reminder');
 require('./models/user');
+require('./models/plan');
 require('./models/telegramSchedule');
 require('./models/telegramChatTag');
 require('./models/platformCredential');
 require('./models/subscriptionRequest');
 require('./models/coupon');
 require('./models/userSubscription');
+require('./models/tutorial');
+require('./models/review');
+require('./models/facebookAccount');
+require('./models/linkedinAccount');
+require('./models/twitterAccount');
+require('./models/pinterestAccount');
+require('./models/youtubeAccount');
+require('./models/tiktokAccount');
+require('./models/whatsappSession');
+require('./models/whatsappChat');
+require('./models/whatsappSchedule');
+require('./models/contentCategory');
+require('./models/contentItem');
+require('./models/knowledgeBase');
+require('./models/messageUsage');
+require('./models/sallaEvent');
+require('./models/sallaStore');
+require('./models/telegramBotAccount');
+require('./models/telegramChat');
+require('./models/telegramSchedule');
+require('./models/telegramTemplate');
+require('./models/whatsappTemplate');
+require('./models/botData');
+require('./models/botField');
+require('./models/botSettings');
+require('./models/associations').initializeAssociations();
+
 
 const app = express();
 // Honor X-Forwarded-* headers from proxy/CDN to get correct protocol/host
@@ -161,11 +205,13 @@ app.use('/api/pinterest', pinterestRoutes);
 app.use('/api/twitter', twitterRoutes);
 app.use('/api/telegram-bot', telegramBotRoutes);
 app.use('/api/telegram-templates', telegramTemplateRoutes);
+app.use('/api/telegram', telegramRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/platforms', require('./routes/platforms.routes'));
 app.use('/api/bot', botRoutes);
 app.use('/api/bot-settings', botSettingsRoutes);
 app.use('/api/bot-control', botControlRoutes);
+app.use('/api/usage', usageRoutes);
 app.use('/api/whatsapp-templates', whatsappTemplateRoutes);
 app.use('/api', tagRoutes);
 app.use('/api', mediaRoutes);
@@ -175,6 +221,19 @@ app.use('/api/subscription-requests', subscriptionRequestRoutes);
 app.use('/api/subscription', subscriptionRequestRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/tutorials', tutorialRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/custom-fields', customFieldRoutes);
+app.use('/api/services', serviceRoutes);
+app.use('/api/employees', employeeRoutes);
+app.use('/api/content', reminderRoutes);
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static('uploads'));
+
+
+
 app.use('/uploads', express.static('uploads'));
 
 // Lightweight endpoint for Facebook connect with tester handling
@@ -297,18 +356,30 @@ async function start() {
     await sequelize.authenticate();
     console.log('Database connection authenticated successfully.');
 
-    console.log('🔥 FORCE SYNC: Dropping and recreating ALL tables...');
-    console.log('⚠️  WARNING: This will DELETE ALL DATA on each deploy.');
+    // Check sync mode from environment variable
+    const syncMode = process.env.DB_SYNC_MODE || 'alter';
+    console.log(`🔄 ${syncMode.toUpperCase()} SYNC: Updating database schema...`);
+    
+    if (syncMode === 'force') {
+      console.log('⚠️  WARNING: This will DELETE ALL DATA on each deploy.');
+    } else {
+      console.log('✅ Data will be preserved during schema updates.');
+    }
+    
     const isMySQL = (process.env.DB_DIALECT || '').toLowerCase() === 'mysql';
     if (isMySQL) {
       // Temporarily disable FK checks to avoid creation order issues
       await sequelize.query('SET FOREIGN_KEY_CHECKS=0');
     }
-    await sequelize.sync({ alter: true });
+    
+
+    
+    await sequelize.sync({ [syncMode]: true });
+    
     if (isMySQL) {
       await sequelize.query('SET FOREIGN_KEY_CHECKS=1');
     }
-    console.log('✅ Database schema synchronized (all tables edited).');
+    console.log(`✅ Database schema synchronized (${syncMode} mode).`);
   } catch (error) {
     if (
       error.name === 'SequelizeConnectionRefusedError' ||
@@ -317,10 +388,13 @@ async function start() {
       error.name === 'SequelizeAccessDeniedError'
     ) {
       console.error('❌ Database connection error:', error.message);
+      process.exit(1);
     } else {
       console.error('❌ Database synchronization error:', error.message);
+      console.log('🔄 Attempting to continue with existing schema...');
+      // Don't exit on schema errors, just log and continue
+      console.log('⚠️  Some schema changes may not be applied. Check the error above.');
     }
-    process.exit(1);
   }
   // Start scheduler after DB is ready
   try { 
@@ -361,30 +435,9 @@ const { Plan } = require('./models/plan');
 const { Coupon } = require('./models/coupon');
 const { SubscriptionRequest } = require('./models/subscriptionRequest');
 const { UserSubscription } = require('./models/userSubscription');
+const { Review } = require('./models/review');
 
-// Plan associations
-Plan.hasMany(Coupon, { foreignKey: 'planId', as: 'coupons' });
-Plan.hasMany(UserSubscription, { foreignKey: 'planId', as: 'subscriptions' });
-Plan.hasMany(SubscriptionRequest, { foreignKey: 'planId', as: 'subscriptionRequests' });
-
-// Coupon associations
-Coupon.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
-Coupon.belongsTo(User, { foreignKey: 'usedBy', as: 'usedByUser' });
-
-// User associations
-User.hasMany(Coupon, { foreignKey: 'usedBy', as: 'usedCoupons' });
-User.hasMany(UserSubscription, { foreignKey: 'userId', as: 'subscriptions' });
-User.hasMany(SubscriptionRequest, { foreignKey: 'userId', as: 'subscriptionRequests' });
-
-// SubscriptionRequest associations
-SubscriptionRequest.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-SubscriptionRequest.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
-SubscriptionRequest.hasOne(UserSubscription, { foreignKey: 'subscriptionRequestId', as: 'subscription' });
-
-// UserSubscription associations
-UserSubscription.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-UserSubscription.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
-UserSubscription.belongsTo(SubscriptionRequest, { foreignKey: 'subscriptionRequestId', as: 'subscriptionRequest' });
+// All associations moved to associations.js
 
 process.on('uncaughtException', (err) => {
   // Avoid crashing on transient Windows file locking issues

@@ -1,18 +1,19 @@
 const { Router } = require('express');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const ctrl = require('../controllers/plans.controller');
 
 const router = Router();
 
-// Public view of active plans
+// Public view of active plans (no auth required)
 router.get('/public', ctrl.publicPlans);
 
+// List all plans - requires authentication (users can see all active plans)
+router.get('/', requireAuth, ctrl.listPlans);
+
 // Admin-only management
-router.use(requireAdmin);
-router.get('/', ctrl.listPlans);
-router.post('/', ctrl.createPlan);
-router.put('/:id', ctrl.updatePlan);
-router.delete('/:id', ctrl.deletePlan);
+router.post('/', requireAdmin, ctrl.createPlan);
+router.put('/:id', requireAdmin, ctrl.updatePlan);
+router.delete('/:id', requireAdmin, ctrl.deletePlan);
 
 module.exports = router;
 

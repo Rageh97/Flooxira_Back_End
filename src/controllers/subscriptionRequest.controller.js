@@ -47,8 +47,7 @@ async function createSubscriptionRequest(req, res) {
         where: {
           code: couponCode,
           planId: planId,
-          isActive: true,
-          usedAt: null
+          isActive: true
         }
       });
 
@@ -58,6 +57,11 @@ async function createSubscriptionRequest(req, res) {
 
       if (coupon.expiresAt && new Date() > coupon.expiresAt) {
         return res.status(400).json({ message: 'Coupon has expired' });
+      }
+
+      // Check if coupon has reached max uses
+      if (coupon.maxUses && coupon.currentUses >= coupon.maxUses) {
+        return res.status(400).json({ message: 'Coupon has reached maximum number of uses' });
       }
     }
 
@@ -220,12 +224,24 @@ async function updateSubscriptionRequestStatus(req, res) {
     if (status === 'approved') {
       // Calculate expiration date
       const plan = subscriptionRequest.Plan;
-      const expiresAt = new Date();
+      let expiresAt = new Date();
       
       if (plan.interval === 'monthly') {
         expiresAt.setMonth(expiresAt.getMonth() + 1);
       } else if (plan.interval === 'yearly') {
         expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      }
+
+      // If coupon was used, apply bonusDays
+      let coupon = null;
+      if (subscriptionRequest.paymentMethod === 'coupon' && subscriptionRequest.couponCode) {
+        coupon = await Coupon.findOne({
+          where: { code: subscriptionRequest.couponCode }
+        });
+
+        if (coupon && coupon.bonusDays > 0) {
+          expiresAt.setDate(expiresAt.getDate() + coupon.bonusDays);
+        }
       }
 
       await UserSubscription.create({
@@ -237,12 +253,13 @@ async function updateSubscriptionRequestStatus(req, res) {
         expiresAt: expiresAt
       });
 
-      // If coupon was used, mark it as used
-      if (subscriptionRequest.paymentMethod === 'coupon' && subscriptionRequest.couponCode) {
+      // If coupon was used, increment currentUses
+      if (coupon) {
         await Coupon.update(
           { 
-            usedAt: new Date(),
-            usedBy: subscriptionRequest.userId
+            currentUses: (coupon.currentUses || 0) + 1,
+            usedAt: new Date(), // Keep for backward compatibility
+            usedBy: subscriptionRequest.userId // Keep for backward compatibility
           },
           { 
             where: { code: subscriptionRequest.couponCode }
@@ -265,7 +282,7 @@ async function updateSubscriptionRequestStatus(req, res) {
 // Validate coupon code
 async function validateCoupon(req, res) {
   try {
-    const { code, planId } = req.query;
+    const { code, planId, discountKeyword } = req.query;
     const userId = req.user?.id;
 
     if (!code || !planId) {
@@ -276,8 +293,7 @@ async function validateCoupon(req, res) {
       where: {
         code: code,
         planId: planId,
-        isActive: true,
-        usedAt: null
+        isActive: true
       },
       include: [
         {
@@ -289,26 +305,19 @@ async function validateCoupon(req, res) {
     });
 
     if (!coupon) {
-      return res.status(400).json({ message: 'كود القسيمة غير صحيح أو مستخدم من قبل' });
+      return res.status(400).json({ message: 'كود القسيمة غير صحيح' });
     }
 
     if (coupon.expiresAt && new Date() > coupon.expiresAt) {
       return res.status(400).json({ message: 'انتهت صلاحية القسيمة' });
     }
 
-    // Check if coupon is already used by this user
-    const usedByThisUser = await Coupon.findOne({
-      where: {
-        code: code,
-        usedBy: userId
-      }
-    });
-
-    if (usedByThisUser) {
-      return res.status(400).json({ message: 'لقد استخدمت هذه القسيمة من قبل' });
+    // Check if coupon has reached max uses
+    if (coupon.maxUses && coupon.currentUses >= coupon.maxUses) {
+      return res.status(400).json({ message: 'تم استخدام هذه القسيمة الحد الأقصى من المرات' });
     }
 
-    // If user is authenticated, activate the coupon immediately
+    // If user is authenticated, activate the coupon/discount immediately
     if (userId) {
       // Check if user already has an active subscription for this plan
       const existingSubscription = await UserSubscription.findOne({
@@ -327,11 +336,46 @@ async function validateCoupon(req, res) {
       }
 
       // Calculate expiration date based on plan interval
-      const expiresAt = new Date();
+      let expiresAt = new Date();
       if (coupon.plan.interval === 'monthly') {
         expiresAt.setMonth(expiresAt.getMonth() + 1);
       } else if (coupon.plan.interval === 'yearly') {
         expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      }
+
+      // Apply bonus days only if coupon type is bonus_days
+      if (coupon.discountType === 'bonus_days' && coupon.bonusDays && coupon.bonusDays > 0) {
+        expiresAt.setDate(expiresAt.getDate() + coupon.bonusDays);
+      }
+
+      // Calculate final price after discount
+      let finalPriceCents = coupon.plan.priceCents;
+      let appliedDiscount = 0;
+      
+      // Apply base discount
+      if (coupon.discountType === 'percentage' && coupon.discountValue > 0) {
+        appliedDiscount = coupon.discountValue;
+        finalPriceCents = Math.round(coupon.plan.priceCents * (1 - coupon.discountValue / 100));
+      } else if (coupon.discountType === 'fixed' && coupon.discountValue > 0) {
+        appliedDiscount = coupon.discountValue;
+        finalPriceCents = Math.max(0, coupon.plan.priceCents - (coupon.discountValue * 100));
+      }
+      
+      // Apply additional discount keyword if provided and matches
+      if (discountKeyword && coupon.discountKeyword && 
+          discountKeyword.toLowerCase() === coupon.discountKeyword.toLowerCase() && 
+          coupon.discountKeywordValue > 0) {
+        if (coupon.discountType === 'percentage') {
+          // Apply additional percentage discount
+          const additionalDiscount = coupon.discountKeywordValue;
+          finalPriceCents = Math.round(finalPriceCents * (1 - additionalDiscount / 100));
+          appliedDiscount += additionalDiscount;
+        } else if (coupon.discountType === 'fixed') {
+          // Apply additional fixed discount
+          const additionalDiscount = coupon.discountKeywordValue * 100; // Convert to cents
+          finalPriceCents = Math.max(0, finalPriceCents - additionalDiscount);
+          appliedDiscount += coupon.discountKeywordValue;
+        }
       }
 
       // Create user subscription
@@ -340,14 +384,19 @@ async function validateCoupon(req, res) {
         planId: planId,
         status: 'active',
         startedAt: new Date(),
-        expiresAt: expiresAt
+        expiresAt: expiresAt,
+        couponCode: coupon.code,
+        discountType: coupon.discountType,
+        discountValue: coupon.discountValue,
+        finalPriceCents: finalPriceCents
       });
 
-      // Mark coupon as used
+      // Increment coupon uses
       await Coupon.update(
         { 
-          usedAt: new Date(),
-          usedBy: userId
+          currentUses: (coupon.currentUses || 0) + 1,
+          usedAt: new Date(), // Keep for backward compatibility
+          usedBy: userId // Keep for backward compatibility
         },
         { 
           where: { id: coupon.id }

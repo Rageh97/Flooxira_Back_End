@@ -15,7 +15,9 @@ const {
   selectInstagramAccount,
   testFacebookConnection,
   disconnectFacebook,
-  getConnectedAccounts
+  getConnectedAccounts,
+  getCurrentFacebookPageDetails,
+  getInstagramAccountDetails
 } = require('../controllers/facebook.controller');
 
 const router = Router();
@@ -57,11 +59,10 @@ router.post('/disconnect', disconnectFacebook);
 router.get('/connected-accounts', getConnectedAccounts);
 
 // Platform details routes
-router.get('/current-page', getFacebookAccount);
-router.get('/pages', getFacebookPages);
+router.get('/current-page', getCurrentFacebookPageDetails);
 
 // Instagram details
-router.get('/instagram/account', getInstagramAccounts);
+router.get('/instagram/account', getInstagramAccountDetails);
 
 module.exports = router;
 

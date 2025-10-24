@@ -105,10 +105,20 @@ async function webhook(req, res) {
 async function sendMessage(req, res) {
 	try {
 		const userId = req.userId;
-		const { chatId, text } = req.body || {};
-		if (!chatId || !text) return res.status(400).json({ success: false, message: 'chatId and text required' });
+		const { chatId, text, mediaType, mediaFile, stickerId } = req.body || {};
 		
-		const result = await tgBot.sendMessage(userId, chatId, text);
+		if (!chatId) return res.status(400).json({ success: false, message: 'chatId required' });
+		if (!text && !mediaType && !stickerId) return res.status(400).json({ success: false, message: 'text, mediaType, or stickerId required' });
+		
+		let result;
+		if (stickerId) {
+			result = await tgBot.sendSticker(userId, chatId, stickerId);
+		} else if (mediaType && mediaFile) {
+			result = await tgBot.sendMedia(userId, chatId, mediaType, mediaFile, text);
+		} else {
+			result = await tgBot.sendMessage(userId, chatId, text);
+		}
+		
 		return res.json({ success: true, message: result });
 	} catch (e) {
 		console.error('[TG-Bot] Send message error:', e.message);
@@ -236,11 +246,63 @@ async function getChatStats(req, res) {
 	}
 }
 
+async function pollMessages(req, res) {
+	try {
+		const userId = req.userId;
+		await tgBot.pollForNewMessages(userId);
+		return res.json({ success: true, message: 'Messages polled successfully' });
+	} catch (e) {
+		console.error('[TG-Bot] Poll messages error:', e.message);
+		return res.status(400).json({ success: false, message: e.message });
+	}
+}
+
+async function disconnectBot(req, res) {
+	try {
+		const userId = req.userId;
+		
+		// Get active bot
+		const bot = await TelegramBotAccount.findOne({ where: { userId, isActive: true } });
+		if (!bot) {
+			return res.status(400).json({ success: false, message: 'No active bot found' });
+		}
+		
+		// Delete webhook if exists
+		try {
+			await tgBot.deleteWebhook(bot.token);
+			console.log('[TG-Bot] Webhook deleted successfully');
+		} catch (e) {
+			console.warn('[TG-Bot] Failed to delete webhook:', e.message);
+		}
+		
+		// Deactivate bot
+		bot.isActive = false;
+		await bot.save();
+		
+		console.log(`[TG-Bot] Bot disconnected for user ${userId}`);
+		return res.json({ success: true, message: 'Bot disconnected successfully' });
+	} catch (e) {
+		console.error('[TG-Bot] Disconnect bot error:', e.message);
+		return res.status(400).json({ success: false, message: e.message });
+	}
+}
+
 async function getChatContacts(req, res) {
 	try {
 		const userId = req.userId;
 		
-		const contacts = await TelegramChat.findAll({
+		// Get bot chats that the bot is actually in
+		let botChats = [];
+		try {
+			const botChatsResult = await tgBot.getBotChats(userId);
+			botChats = botChatsResult.chats || [];
+		} catch (e) {
+			console.warn('[TG-Bot] Failed to get bot chats, falling back to saved chats only:', e.message);
+			botChats = [];
+		}
+		
+		// Also get saved chat history for message counts
+		const savedChats = await TelegramChat.findAll({
 			where: { userId },
 			attributes: [
 				'chatId',
@@ -252,6 +314,39 @@ async function getChatContacts(req, res) {
 			group: ['chatId', 'chatType', 'chatTitle'],
 			order: [[TelegramChat.sequelize.fn('MAX', TelegramChat.sequelize.col('timestamp')), 'DESC']]
 		});
+		
+		// Create a map of saved chats for quick lookup
+		const savedChatsMap = new Map();
+		savedChats.forEach(chat => {
+			savedChatsMap.set(chat.chatId.toString(), {
+				messageCount: parseInt(chat.dataValues.messageCount) || 0,
+				lastMessageTime: chat.dataValues.lastMessageTime
+			});
+		});
+		
+		// Combine bot chats with saved data
+		const contacts = botChats.map(chat => {
+			const savedData = savedChatsMap.get(chat.id) || { messageCount: 0, lastMessageTime: chat.lastActivity };
+			return {
+				chatId: chat.id,
+				chatType: chat.type,
+				chatTitle: chat.title,
+				messageCount: savedData.messageCount,
+				lastMessageTime: savedData.lastMessageTime
+			};
+		});
+		
+		// If no bot chats found, fall back to saved chats only
+		if (contacts.length === 0 && savedChats.length > 0) {
+			const fallbackContacts = savedChats.map(chat => ({
+				chatId: chat.chatId,
+				chatType: chat.chatType,
+				chatTitle: chat.chatTitle,
+				messageCount: parseInt(chat.dataValues.messageCount) || 0,
+				lastMessageTime: chat.dataValues.lastMessageTime
+			}));
+			return res.json({ success: true, contacts: fallbackContacts });
+		}
 		
 		return res.json({ success: true, contacts });
 	} catch (e) {
@@ -501,18 +596,32 @@ async function sendTemplateMessage(req, res) {
 					model: TelegramTemplateButton,
 					as: 'buttons',
 					where: { parentButtonId: null, isActive: true },
-					required: false,
-					include: [
-						{
-							model: TelegramTemplateButton,
-							as: 'ChildButtons',
-							where: { isActive: true },
-							required: false
-						}
-					]
+					required: false
 				}
 			]
 		});
+
+		// Load all child buttons recursively
+		if (template && template.buttons) {
+			const loadAllChildButtons = async (buttons) => {
+				if (!buttons || buttons.length === 0) return buttons;
+				
+				for (let button of buttons) {
+					const childButtons = await TelegramTemplateButton.findAll({
+						where: { parentButtonId: button.id, isActive: true },
+						order: [['displayOrder', 'ASC']]
+					});
+					
+					if (childButtons.length > 0) {
+						button.ChildButtons = await loadAllChildButtons(childButtons);
+					}
+				}
+				
+				return buttons;
+			};
+			
+			template.buttons = await loadAllChildButtons(template.buttons);
+		}
 
 		if (!template) {
 			return res.status(404).json({ success: false, message: 'Template not found' });
@@ -609,8 +718,8 @@ async function testTemplateMatching(req, res) {
 }
 
 module.exports = { 
-  connect, webhook, info, testBot, getChat, getChatAdmins, promoteMember, 
-	getUpdates, getChatHistory, getChatStats, getChatContacts, exportMembers, getChatMembersInfo, getBotChats,
+  connect, disconnectBot, webhook, info, testBot, getChat, getChatAdmins, promoteMember, 
+	getUpdates, getChatHistory, getChatStats, getChatContacts, exportMembers, getChatMembersInfo, getBotChats, pollMessages,
   sendTemplateMessage, getActiveTemplates, findMatchingTemplate, testTemplateMatching,
   createTelegramCampaign, listTelegramCampaigns, listTelegramMonthlySchedules,
   updateTelegramScheduleController, deleteTelegramScheduleController,

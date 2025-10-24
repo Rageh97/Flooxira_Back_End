@@ -73,17 +73,17 @@ const SYNONYMS = new Map([
 ]);
 
 const SMALL_TALK = [
-  { match: /(السلام\s*عليكم|salam|assalamu)/i, reply: 'وعليكم السلام ورحمة الله وبركاته 👋\nأهلاً وسهلاً في شانس بلاي! 🎮\nأنا سلمى، موظفة خدمة العملاء هنا 😊\nشانس بلاي منصة متخصصة في الألعاب والترفيه الرقمي، نقدم أفضل المنتجات والخدمات لعشاق الألعاب 🎯\nكيف أقدر أساعدك اليوم؟' },
-  { match: /(مرحبا|اهلا|أهلا|hi|hello)/i, reply: 'أهلاً وسهلاً في شانس بلاي! 🎮\nأنا سلمى، موظفة خدمة العملاء هنا 😊\nكيف أقدر أساعدك اليوم؟' },
+  { match: /(السلام\s*عليكم|salam|assalamu)/i, reply: 'وعليكم السلام ورحمة الله وبركاته 👋\nكيف أقدر أساعدك اليوم؟' },
+  { match: /(مرحبا|اهلا|أهلا|hi|hello)/i, reply: 'أهلاً وسهلاً! 😊\nكيف أقدر أساعدك اليوم؟' },
   { match: /(شكرا|شكرًا|thanks|thank you)/i, reply: 'على الرحب والسعة! 😊\nهل في شي ثاني أقدر أساعدك فيه؟' },
   { match: /(مع السلامه|وداعا|باي|bye)/i, reply: 'إلى اللقاء! 🙋‍♀️\nنتمنى لك يوماً سعيداً، وترجع لنا أي وقت!' },
-  { match: /(مستعد|بدي اشتريها|موافق على الشراء|اقتنعت|خلاص موافق)/i, reply: 'ممتاز! تفضل رابط الشراء:\nhttps://chanceplay.com/buy-now\n\nشكراً لثقتك في شانس بلاي! 🎉' }
+  { match: /(مستعد|بدي اشتريها|موافق على الشراء|اقتنعت|خلاص موافق)/i, reply: 'ممتاز! تفضل رابط الشراء:\nhttps://chanceplay.com/buy-now\n\nشكراً لثقتك! 🎉' }
 ];
 
 // Smart greeting function that considers conversation history
 function getSmartGreeting(conversationContext) {
   if (!conversationContext) {
-    return 'أهلاً وسهلاً في شانس بلاي! 🎮\nأنا سلمى، موظفة خدمة العملاء هنا 😊\nكيف أقدر أساعدك اليوم؟';
+    return 'أهلاً وسهلاً! 😊\nكيف أقدر أساعدك اليوم؟';
   }
 
   const { isReturningCustomer, customerName, serviceContext, conversationStage } = conversationContext;
@@ -96,8 +96,8 @@ function getSmartGreeting(conversationContext) {
     return 'أهلاً! 😊\nكيف أقدر أساعدك اليوم؟';
   }
 
-  // First time customer - full greeting
-  return 'أهلاً وسهلاً في شانس بلاي! 🎮\nأنا سلمى، موظفة خدمة العملاء هنا 😊\nكيف أقدر أساعدك اليوم؟';
+  // First time customer - simple greeting
+  return 'أهلاً وسهلاً! 😊\nكيف أقدر أساعدك اليوم؟';
 }
 
 function expandQueryWithSynonyms(query) {
@@ -117,17 +117,26 @@ function expandQueryWithSynonyms(query) {
 function detectIntent(query) {
   const q = normalizeArabic(query).toLowerCase();
   const isQuestion = /^(هل|ما|اي|أي|ماذا|كم|كيف)\b/.test(q) || q.includes('؟');
+  
+  // More specific intent detection
+  const priceTerms = ['السعر', 'ثمن', 'بكام', 'price', 'تكلفة', 'تكلفه', 'كم يكلف', 'كم سعره', 'سعر'];
+  const descTerms = ['وصف', 'الوصف', 'description', 'تفاصيل', 'مميزات', 'خصائص', 'كيف يعمل'];
+  const availTerms = ['متوفر', 'المتوفر', 'متاح', 'availability', 'stock', 'in_stock', 'هل موجود', 'موجود'];
+  const contactTerms = ['اتصال', 'تواصل', 'رقم', 'هاتف', 'contact', 'phone', 'كيف اتواصل'];
+  const faqTerms = ['اسئلة', 'أسئلة', 'شائعة', 'faq', 'مشاكل', 'مشكلة', 'مساعدة'];
   const inventoryTerms = ['منتج', 'منتجات', 'بضاعه', 'بضاعة', 'بضاع', 'قائمة', 'كتالوج', 'catalog', 'products', 'items', 'available', 'list'];
-  const priceTerms = ['السعر', 'ثمن', 'بكام', 'price', 'تكلفة', 'تكلفه'];
-  const descTerms = ['وصف', 'الوصف', 'description', 'تفاصيل'];
-  const availTerms = ['متوفر', 'المتوفر', 'متاح', 'availability', 'stock', 'in_stock'];
 
   const has = (terms) => terms.some((t) => q.includes(t));
+  
+  // Priority order - more specific intents first
   if (has(priceTerms)) return { type: 'price' };
   if (has(descTerms)) return { type: 'description' };
   if (has(availTerms)) return { type: 'availability' };
+  if (has(contactTerms)) return { type: 'contact' };
+  if (has(faqTerms)) return { type: 'faq' };
   if (has(inventoryTerms)) return { type: 'inventory' };
-  return { type: isQuestion ? 'generic_question' : 'unknown' };
+  
+  return { type: isQuestion ? 'general' : 'unknown' };
 }
 
 function getFieldValue(data, aliases) {
@@ -220,7 +229,7 @@ async function searchOrAnswer(userId, query, threshold = 0.5, limit = 3, contact
     }
   }
 
-  // Intent-based answers
+  // Intent-based answers with smart filtering
   try {
     const intent = detectIntent(query);
     if (list.length) {
@@ -243,56 +252,92 @@ async function searchOrAnswer(userId, query, threshold = 0.5, limit = 3, contact
         const data = match.data || {};
         const nameVal = getFieldValue(data, nameAliases) || 'هذا المنتج';
         const priceVal = getFieldValue(data, priceAliases);
-        const descVal = getFieldValue(data, descAliases);
-        const warrantyVal = data['الضمان'] || data['warranty'] || '';
         
         if (typeof priceVal !== 'undefined') {
-          let answer = `💰 سعر ${nameVal}: ${priceVal} ريال سعودي\n`;
-          if (descVal) answer += `📝 الوصف: ${String(descVal).slice(0, 150)}\n`;
-          if (warrantyVal) answer += `🛡️ الضمان: ${warrantyVal}\n`;
-          answer += `\n✨ هذا سعر ممتاز مقارنة بجودة المنتج!\n🚚 توصيل مجاني لجميع أنحاء المملكة\n🎮 شانس بلاي - منصة الألعاب والترفيه الرقمي المفضلة`;
-          return { source: 'direct', answer };
+          // Return only the price information, not all details
+          return { 
+            source: 'intent_price', 
+            answer: `سعر ${nameVal}: ${priceVal}`,
+            context: [{ name: nameVal, price: priceVal }] // Only relevant data
+          };
         }
       }
-      if (intent.type === 'description' && nameResults.length) {
-        const match = nameResults[0].item;
-        const data = match.data || {};
-        const nameVal = getFieldValue(data, nameAliases) || 'هذا المنتج';
-        const descVal = getFieldValue(data, descAliases);
-        const priceVal = getFieldValue(data, priceAliases);
-        const warrantyVal = data['الضمان'] || data['warranty'] || '';
-        
-        if (descVal) {
-          let answer = `📱 المنتج: ${nameVal}\n`;
-          answer += `📝 الوصف التفصيلي:\n${descVal}\n`;
-          if (priceVal) answer += `💰 السعر: ${priceVal} ريال سعودي\n`;
-          if (warrantyVal) answer += `🛡️ الضمان: ${warrantyVal}\n`;
-          answer += `\n✨ هذا المنتج مميز جداً ويستحق الشراء! 💯\n🚚 توصيل سريع لجميع أنحاء المملكة\n🎮 شانس بلاي - منصة الألعاب والترفيه الرقمي المفضلة`;
-          return { source: 'direct', answer };
-        }
-      }
+
       if (intent.type === 'availability' && nameResults.length) {
         const match = nameResults[0].item;
         const data = match.data || {};
         const nameVal = getFieldValue(data, nameAliases) || 'هذا المنتج';
         const availVal = getFieldValue(data, availAliases);
-        const priceVal = getFieldValue(data, priceAliases);
-        const stockVal = data['المخزون'] || data['stock'] || '';
         
         if (typeof availVal !== 'undefined') {
-          const asText = String(availVal).toLowerCase();
-          const yes = ['yes','true','1','متاح','متوفر','available','in_stock'].some(v => asText.includes(v));
-          
-          if (yes) {
-            let answer = `✅ ${nameVal} متوفر عندنا الآن! 🎉\n`;
-            if (priceVal) answer += `💰 السعر: ${priceVal} ريال سعودي\n`;
-            if (stockVal) answer += `📦 المخزون: ${stockVal}\n`;
-            answer += `🛡️ عندك ضمان كامل وخدمة عملاء ممتازة في شانس بلاي!\n🚚 توصيل سريع لجميع أنحاء المملكة\n🎮 شانس بلاي - منصة الألعاب والترفيه الرقمي المفضلة`;
-            return { source: 'direct', answer };
-          } else {
-            return { source: 'direct', answer: `${nameVal} غير متوفر حالياً 😔\nبس عندنا منتجات مشابهة ممتازة! شوفها 👇` };
-          }
+          // Return only availability information
+          return { 
+            source: 'intent_availability', 
+            answer: `حالة توفر ${nameVal}: ${availVal}`,
+            context: [{ name: nameVal, availability: availVal }] // Only relevant data
+          };
         }
+      }
+
+      if (intent.type === 'description' && nameResults.length) {
+        const match = nameResults[0].item;
+        const data = match.data || {};
+        const nameVal = getFieldValue(data, nameAliases) || 'هذا المنتج';
+        const descVal = getFieldValue(data, descAliases);
+        
+        if (typeof descVal !== 'undefined') {
+          // Return only description information
+          return { 
+            source: 'intent_description', 
+            answer: `وصف ${nameVal}: ${descVal}`,
+            context: [{ name: nameVal, description: descVal }] // Only relevant data
+          };
+        }
+      }
+
+      if (intent.type === 'contact' && nameResults.length) {
+        const match = nameResults[0].item;
+        const data = match.data || {};
+        const nameVal = getFieldValue(data, nameAliases) || 'هذا المنتج';
+        
+        // Return only contact information
+        return { 
+          source: 'intent_contact', 
+          answer: `للتواصل بخصوص ${nameVal}، يمكنك التواصل معنا عبر:\n📞 الهاتف: [رقم الهاتف]\n📧 البريد الإلكتروني: [البريد الإلكتروني]\n💬 واتساب: [رقم الواتساب]`,
+          context: [{ name: nameVal, contact: true }]
+        };
+      }
+
+      if (intent.type === 'faq' && nameResults.length) {
+        const match = nameResults[0].item;
+        const data = match.data || {};
+        const nameVal = getFieldValue(data, nameAliases) || 'هذا المنتج';
+        
+        // Return only FAQ information
+        return { 
+          source: 'intent_faq', 
+          answer: `الأسئلة الشائعة حول ${nameVal}:\n❓ سؤال 1: إجابة\n❓ سؤال 2: إجابة\n❓ سؤال 3: إجابة`,
+          context: [{ name: nameVal, faq: true }]
+        };
+      }
+
+      if (intent.type === 'general' && nameResults.length) {
+        const match = nameResults[0].item;
+        const data = match.data || {};
+        const nameVal = getFieldValue(data, nameAliases) || 'هذا المنتج';
+        
+        // For general queries, return basic info only
+        const basicInfo = {
+          name: nameVal,
+          price: getFieldValue(data, priceAliases),
+          availability: getFieldValue(data, availAliases)
+        };
+        
+        return { 
+          source: 'intent_general', 
+          answer: `تم العثور على ${nameVal}`,
+          context: [basicInfo] // Only basic info, not all details
+        };
       }
 
       // Inventory/listing style question → concise list
@@ -308,7 +353,7 @@ async function searchOrAnswer(userId, query, threshold = 0.5, limit = 3, contact
           return priceVal ? `${idx + 1}- ${nameVal} - ${priceVal}` : `${idx + 1}- ${nameVal}`;
         });
         const more = list.length > 5 ? `\n+${list.length - 5} منتج آخر مميز! 🎉` : '';
-        const summary = `عندنا ${list.length} منتج مميز في شانس بلاي! شوف بعضها:\n` + lines.join('\n') + more + `\n\nكلها بجودة عالية وضمان كامل! 💯\n🎮 شانس بلاي - منصة الألعاب والترفيه الرقمي المفضلة`;
+        const summary = `عندنا ${list.length} منتج مميز! شوف بعضها:\n` + lines.join('\n') + more;
         return { source: 'summary', answer: summary };
       }
     }
@@ -426,9 +471,39 @@ async function searchOrAnswer(userId, query, threshold = 0.5, limit = 3, contact
   }
 
   const system = systemPrompt.join(' ');
-  const guidanceAr = 'استخدم البيانات التالية للإجابة. إذا لم تجد المنتج/الخدمة المطلوبة، اعتذر وأخبره أن الخدمة ستتوفر قريباً. إذا قرر العميل الشراء، قدم رابط الشراء مباشرة.';
   
-  let userPrompt = `User query: ${query}\n\n${guidanceAr}\n\nContext rows (JSON):\n${JSON.stringify(context, null, 2)}`;
+  // Enhanced guidance based on user settings
+  let guidanceAr = `استخدم البيانات التالية للإجابة على السؤال المحدد فقط. 
+  - أجب على السؤال مباشرة دون إضافة معلومات غير مطلوبة
+  - إذا سأل عن السعر، أرسل السعر فقط
+  - إذا سأل عن التوفر، أرسل حالة التوفر فقط  
+  - إذا سأل عن الوصف، أرسل الوصف فقط
+  - لا ترسل معلومات إضافية مثل الأسئلة الشائعة أو طرق التواصل إلا إذا طُلب ذلك صراحة
+  - إذا لم تجد المنتج/الخدمة المطلوبة، اعتذر وأخبره أن الخدمة ستتوفر قريباً
+  - إذا قرر العميل الشراء، قدم رابط الشراء مباشرة`;
+
+  // Add user-specific guidance based on bot settings
+  if (userSettings) {
+    if (userSettings.personality === 'professional') {
+      guidanceAr += '\n- استخدم أسلوب مهني ورسمي في الرد';
+    } else if (userSettings.personality === 'friendly') {
+      guidanceAr += '\n- استخدم أسلوب ودود ومرح في الرد';
+    } else if (userSettings.personality === 'marketing') {
+      guidanceAr += '\n- ركز على البيع والإقناع في الرد';
+    }
+    
+    if (userSettings.language === 'arabic') {
+      guidanceAr += '\n- استخدم اللغة العربية فقط';
+    } else if (userSettings.language === 'english') {
+      guidanceAr += '\n- استخدم اللغة الإنجليزية فقط';
+    }
+    
+    if (userSettings.includeEmojis) {
+      guidanceAr += '\n- استخدم الإيموجي في الردود';
+    }
+  }
+  
+  let userPrompt = `السؤال: ${query}\n\n${guidanceAr}\n\nالبيانات المتاحة:\n${JSON.stringify(context, null, 2)}`;
   
   // Add conversation history if available
   if (conversationContext && conversationContext.recentMessages && conversationContext.recentMessages.length > 0) {

@@ -11,6 +11,9 @@ router.get('/agents', ctrl.listAgents);
 router.get('/chats', ctrl.listChats);
 router.post('/chats/assign', ctrl.assignChat);
 router.get('/users', ctrl.getAllUsers);
+router.get('/users/:userId', ctrl.getUserDetails);
+router.put('/users/:userId/status', ctrl.updateUserStatus);
+router.get('/subscriptions', ctrl.getAllSubscriptions);
 
 module.exports = router;
 

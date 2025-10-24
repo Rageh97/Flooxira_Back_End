@@ -185,6 +185,38 @@ const BotSettings = sequelize.define('BotSettings', {
     allowNull: false
   },
   
+  // Working Hours Settings
+  workingHoursEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  workingHoursStart: {
+    type: DataTypes.TIME,
+    allowNull: true,
+    defaultValue: '09:00:00'
+  },
+  workingHoursEnd: {
+    type: DataTypes.TIME,
+    allowNull: true,
+    defaultValue: '17:00:00'
+  },
+  workingDays: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [1, 2, 3, 4, 5] // Monday to Friday (1-7, where 1 is Monday)
+  },
+  timezone: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'Asia/Riyadh'
+  },
+  outsideWorkingHoursMessage: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    defaultValue: 'نعتذر، نحن خارج أوقات العمل. سنرد عليك في أقرب وقت ممكن.'
+  },
+  
   // Status
   isActive: {
     type: DataTypes.BOOLEAN,

@@ -1,5 +1,6 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const FormData = require('form-data');
 const TelegramBotAccount = require('../models/telegramBotAccount');
 const TelegramChat = require('../models/telegramChat');
 const { TelegramTemplate, TelegramTemplateButton, TelegramTemplateUsage } = require('../models/telegramTemplate');
@@ -59,9 +60,21 @@ class TelegramBotService {
 
 	async deleteWebhook(token) {
 		const url = `https://api.telegram.org/bot${encodeURIComponent(token)}/deleteWebhook`;
-		const resp = await axios.post(url, {}, { timeout: 15000 });
-		return !!resp.data?.ok;
+		const params = { drop_pending_updates: true };
+		console.log('[TG-Bot] Deleting webhook');
+		
+		try {
+			const resp = await axios.post(url, params, { timeout: 15000 });
+			console.log('[TG-Bot] Delete webhook response:', { ok: resp.data?.ok, description: resp.data?.description });
+			
+			if (!resp.data?.ok) throw new Error(resp.data?.description || 'Failed to delete webhook');
+			return true;
+		} catch (err) {
+			console.error('[TG-Bot] Webhook deletion failed:', err.message);
+			throw new Error('Failed to delete webhook: ' + err.message);
+		}
 	}
+
 
 	async connectBot(userId, token, baseUrl) {
 		const me = await this.verifyToken(token);
@@ -120,6 +133,10 @@ class TelegramBotService {
 			console.log('[TG-Bot] sendMessage response:', { ok: resp.data?.ok, description: resp.data?.description });
 			
 			if (!resp.data?.ok) throw new Error(resp.data?.description || 'Failed to send message');
+			
+			// Log outgoing message
+			await this.logChatMessage(userId, chatId, 'private', 'Bot', 'outgoing', text);
+			
 			return resp.data.result;
 		} catch (err) {
 			console.error('[TG-Bot] Send message failed:', err.message);
@@ -128,6 +145,87 @@ class TelegramBotService {
 				console.error('[TG-Bot] Response data:', err.response.data);
 			}
 			throw new Error('Failed to send message: ' + (err.response?.data?.description || err.message));
+		}
+	}
+
+	async sendMedia(userId, chatId, mediaType, mediaFile, caption = '') {
+		const bot = await this.getActiveBot(userId);
+		if (!bot || !bot.token) throw new Error('No active bot found');
+		
+		let endpoint;
+		let formData = new FormData();
+		
+		// Determine endpoint based on media type
+		switch (mediaType) {
+			case 'photo':
+				endpoint = 'sendPhoto';
+				formData.append('photo', mediaFile);
+				break;
+			case 'video':
+				endpoint = 'sendVideo';
+				formData.append('video', mediaFile);
+				break;
+			case 'audio':
+				endpoint = 'sendAudio';
+				formData.append('audio', mediaFile);
+				break;
+			case 'document':
+				endpoint = 'sendDocument';
+				formData.append('document', mediaFile);
+				break;
+			case 'voice':
+				endpoint = 'sendVoice';
+				formData.append('voice', mediaFile);
+				break;
+			default:
+				throw new Error('Unsupported media type: ' + mediaType);
+		}
+		
+		formData.append('chat_id', chatId);
+		if (caption) formData.append('caption', caption);
+		
+		const url = `https://api.telegram.org/bot${encodeURIComponent(bot.token)}/${endpoint}`;
+		console.log('[TG-Bot] Sending media to:', chatId, 'type:', mediaType);
+		
+		try {
+			const resp = await axios.post(url, formData, { 
+				timeout: 30000,
+				headers: { ...formData.getHeaders() }
+			});
+			
+			if (!resp.data?.ok) throw new Error(resp.data?.description || 'Failed to send media');
+			
+			// Log outgoing message
+			const messageContent = caption || `[${mediaType.toUpperCase()}]`;
+			await this.logChatMessage(userId, chatId, 'private', 'Bot', 'outgoing', messageContent);
+			
+			return resp.data.result;
+		} catch (err) {
+			console.error('[TG-Bot] Send media failed:', err.message);
+			throw new Error('Failed to send media: ' + (err.response?.data?.description || err.message));
+		}
+	}
+
+	async sendSticker(userId, chatId, stickerId) {
+		const bot = await this.getActiveBot(userId);
+		if (!bot || !bot.token) throw new Error('No active bot found');
+		
+		const url = `https://api.telegram.org/bot${encodeURIComponent(bot.token)}/sendSticker`;
+		const params = { chat_id: chatId, sticker: stickerId };
+		console.log('[TG-Bot] Sending sticker to:', chatId, 'stickerId:', stickerId);
+		
+		try {
+			const resp = await axios.post(url, params, { timeout: 15000 });
+			
+			if (!resp.data?.ok) throw new Error(resp.data?.description || 'Failed to send sticker');
+			
+			// Log outgoing message
+			await this.logChatMessage(userId, chatId, 'private', 'Bot', 'outgoing', '[STICKER]');
+			
+			return resp.data.result;
+		} catch (err) {
+			console.error('[TG-Bot] Send sticker failed:', err.message);
+			throw new Error('Failed to send sticker: ' + (err.response?.data?.description || err.message));
 		}
 	}
 
@@ -1131,6 +1229,61 @@ class TelegramBotService {
 		}
 	}
 
+	// Poll for new messages (fallback when webhook is not available)
+	async pollForNewMessages(userId) {
+		const bot = await this.getActiveBot(userId);
+		if (!bot || !bot.token) return;
+		
+		try {
+			// Get the last update ID we processed
+			const lastUpdateId = await this.getLastUpdateId(userId);
+			
+			const updatesUrl = `https://api.telegram.org/bot${encodeURIComponent(bot.token)}/getUpdates`;
+			const updatesResp = await axios.post(updatesUrl, { 
+				offset: lastUpdateId + 1,
+				limit: 100,
+				timeout: 10,
+				allowed_updates: ['message', 'channel_post', 'edited_message', 'edited_channel_post']
+			}, { timeout: 20000 });
+			
+			if (updatesResp.data?.ok && updatesResp.data.result?.length > 0) {
+				const updates = updatesResp.data.result;
+				let maxUpdateId = lastUpdateId;
+				
+				for (const update of updates) {
+					await this.handleIncomingMessage(userId, update);
+					maxUpdateId = Math.max(maxUpdateId, update.update_id);
+				}
+				
+				// Save the last processed update ID
+				await this.saveLastUpdateId(userId, maxUpdateId);
+			}
+		} catch (err) {
+			console.error('[TG-Bot] Polling error:', err.message);
+		}
+	}
+	
+	// Get last processed update ID
+	async getLastUpdateId(userId) {
+		try {
+			const bot = await this.getActiveBot(userId);
+			return bot.lastUpdateId || 0;
+		} catch {
+			return 0;
+		}
+	}
+	
+	// Save last processed update ID
+	async saveLastUpdateId(userId, updateId) {
+		try {
+			const bot = await this.getActiveBot(userId);
+			bot.lastUpdateId = updateId;
+			await bot.save();
+		} catch (err) {
+			console.error('[TG-Bot] Failed to save last update ID:', err.message);
+		}
+	}
+
 	// Handle incoming messages from webhook
 	async handleIncomingMessage(userId, update) {
 		try {
@@ -1204,6 +1357,118 @@ class TelegramBotService {
 
 		} catch (error) {
 			console.error('[TG-Bot] Error handling incoming message:', error);
+		}
+	}
+
+	// Get channels and groups where bot is admin
+	async getBotAdminChannels(userId) {
+		try {
+			const TelegramBotAccount = require('../models/telegramBotAccount');
+			const botAccount = await TelegramBotAccount.findOne({ where: { userId } });
+			
+			if (!botAccount || !botAccount.token) {
+				console.log('[TG-Bot] No bot token found for user:', userId);
+				return [];
+			}
+
+			// Get bot's admin channels/groups from database
+			const TelegramGroup = require('../models/telegramGroup');
+			const groups = await TelegramGroup.findAll({
+				where: {
+					userId,
+					isActive: true,
+					botIsAdmin: true
+				}
+			});
+
+			console.log(`[TG-Bot] Found ${groups.length} admin channels/groups for user ${userId}`);
+			
+			return groups.map(g => ({
+				chatId: g.chatId,
+				name: g.name,
+				type: g.type
+			}));
+		} catch (error) {
+			console.error('[TG-Bot] Error getting bot admin channels:', error);
+			return [];
+		}
+	}
+
+	// Send media to multiple telegram channels/groups
+	async sendMediaToMultipleTargets(userId, targets, mediaPath, caption, mediaType) {
+		try {
+			const TelegramBotAccount = require('../models/telegramBotAccount');
+			const botAccount = await TelegramBotAccount.findOne({ where: { userId } });
+			
+			if (!botAccount || !botAccount.token) {
+				throw new Error('Bot token not found');
+			}
+
+			const token = botAccount.token;
+			let sent = 0;
+			let failed = 0;
+
+			console.log(`[TG-Bot] Sending ${mediaType} to ${targets.length} targets`);
+
+			// Prepare media file
+			const fs = require('fs');
+			const FormData = require('form-data');
+			
+			if (!fs.existsSync(mediaPath)) {
+				throw new Error(`Media file not found: ${mediaPath}`);
+			}
+
+			for (const target of targets) {
+				try {
+					const form = new FormData();
+					form.append('chat_id', target.chatId);
+					form.append(mediaType === 'video' ? 'video' : 'photo', fs.createReadStream(mediaPath));
+					
+					if (caption) {
+						form.append('caption', caption);
+					}
+
+					const endpoint = mediaType === 'video' ? 'sendVideo' : 'sendPhoto';
+					const url = `https://api.telegram.org/bot${encodeURIComponent(token)}/${endpoint}`;
+
+					const response = await axios.post(url, form, {
+						headers: form.getHeaders(),
+						timeout: 30000
+					});
+
+					if (response.data?.ok) {
+						console.log(`[TG-Bot] ✅ Sent to ${target.name} (${target.chatId})`);
+						sent++;
+					} else {
+						console.error(`[TG-Bot] ❌ Failed to send to ${target.name}:`, response.data);
+						failed++;
+					}
+
+					// Throttle between sends to avoid rate limits
+					await new Promise(resolve => setTimeout(resolve, 1000));
+				} catch (error) {
+					console.error(`[TG-Bot] ❌ Error sending to ${target.name}:`, error.message);
+					failed++;
+				}
+			}
+
+			console.log(`[TG-Bot] Sending complete: ${sent} sent, ${failed} failed`);
+
+			return {
+				success: sent > 0,
+				sent,
+				failed,
+				total: targets.length,
+				message: `Sent to ${sent}/${targets.length} targets`
+			};
+		} catch (error) {
+			console.error('[TG-Bot] Error sending media to targets:', error);
+			return {
+				success: false,
+				sent: 0,
+				failed: targets?.length || 0,
+				message: error.message
+			};
 		}
 	}
 }

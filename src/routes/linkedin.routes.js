@@ -13,7 +13,8 @@ const {
   createLinkedInPostWithImage,
   getLinkedInPosts,
   getLinkedInAnalytics,
-  getLinkedInCompanies
+  getLinkedInCompanies,
+  getLinkedInProfile
 } = require('../controllers/linkedin.controller');
 
 const router = Router();
@@ -47,7 +48,7 @@ router.get('/analytics', getLinkedInAnalytics);
 router.get('/companies', getLinkedInCompanies);
 
 // Platform details routes
-router.get('/profile', getLinkedInAnalytics);
+router.get('/profile', getLinkedInProfile);
 
 module.exports = router;
 

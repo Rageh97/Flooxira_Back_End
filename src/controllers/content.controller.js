@@ -5,6 +5,31 @@ const { Post } = require('../models/post');
 const { tryPublishNow } = require('../scheduler');
 const axios = require('axios');
 
+// Google Gemini AI
+let GoogleGenerativeAI;
+try { 
+  GoogleGenerativeAI = require('@google/generative-ai').GoogleGenerativeAI; 
+} catch (_) { 
+  GoogleGenerativeAI = null; 
+}
+
+let geminiModel = null;
+try {
+  if (GoogleGenerativeAI && process.env.GOOGLE_API_KEY) {
+    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+    const requested = process.env.GEMINI_MODEL || '';
+    const sdkModelId = (requested && requested.startsWith('models/')) ? requested.split('/').pop() : (requested || 'gemini-2.5-flash');
+    try {
+      geminiModel = genAI.getGenerativeModel({ model: sdkModelId });
+      console.log('[Content AI] Using Gemini model:', sdkModelId);
+    } catch (_) {
+      geminiModel = null;
+    }
+  }
+} catch (_) {
+  geminiModel = null;
+}
+
 // Categories
 async function listCategories(req, res) {
   const categories = await ContentCategory.findAll({
@@ -36,6 +61,21 @@ async function deleteCategory(req, res) {
   const { id } = req.params;
   const category = await ContentCategory.findOne({ where: { id, userId: req.userId } });
   if (!category) return res.status(404).json({ message: 'Not found' });
+  
+  // Delete reminders for all items in this category first
+  try {
+    const { Reminder } = require('../models/reminder');
+    const items = await ContentItem.findAll({ where: { categoryId: id } });
+    const itemIds = items.map(item => item.id);
+    
+    if (itemIds.length > 0) {
+      await Reminder.destroy({ where: { contentItemId: itemIds } });
+      console.log(`[Content] Deleted reminders for ${itemIds.length} items in category ${id}`);
+    }
+  } catch (error) {
+    console.log(`[Content] No reminders to delete for category ${id}:`, error.message);
+  }
+  
   await category.destroy();
   return res.json({ ok: true });
 }
@@ -118,6 +158,16 @@ async function deleteItem(req, res) {
   const { id } = req.params;
   const item = await ContentItem.findOne({ where: { id, userId: req.userId } });
   if (!item) return res.status(404).json({ message: 'Not found' });
+  
+  // Delete related reminders first to avoid foreign key constraint error
+  try {
+    const { Reminder } = require('../models/reminder');
+    await Reminder.destroy({ where: { contentItemId: id } });
+    console.log(`[Content] Deleted reminders for content item ${id}`);
+  } catch (error) {
+    console.log(`[Content] No reminders to delete for item ${id}:`, error.message);
+  }
+  
   await item.destroy();
   return res.json({ ok: true });
 }
@@ -186,8 +236,55 @@ async function generateAIContent(req, res) {
 }
 
 async function generateContentLocally(prompt, platform, tone, length) {
-  // This is a simple local content generator for demo purposes
-  // In production, replace this with actual AI service calls
+  // Try Google Gemini first if available
+  if (geminiModel && process.env.GOOGLE_API_KEY) {
+    try {
+      console.log('[Content AI] Generating content with Google Gemini...');
+      
+      const systemPrompt = `أنت خبير في إنشاء المحتوى التسويقي للشبكات الاجتماعية. 
+      أنشئ محتوى احترافي وجذاب باللغة العربية بناءً على الطلب التالي.
+      
+      المنصة: ${platform || 'عام'}
+      النبرة: ${tone || 'احترافي'}
+      الطول: ${length || 'متوسط'}
+      
+      المطلوب: ${prompt}
+      
+      يرجى إنشاء محتوى:
+      - جذاب ومقنع
+      - مناسب للمنصة المحددة
+      - باللغة العربية الفصحى
+      - يتضمن هاشتاغات مناسبة
+      - يتضمن إيموجي مناسب
+      - يتضمن دعوة للعمل واضحة
+      - يتراوح بين 50-200 كلمة حسب الطول المطلوب`;
+
+      const result = await geminiModel.generateContent(systemPrompt);
+      const generatedText = result?.response?.text?.() || result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      if (generatedText && generatedText.trim()) {
+        console.log('[Content AI] Successfully generated content with Gemini');
+        return generatedText.trim();
+      }
+    } catch (error) {
+      console.error('[Content AI] Gemini error:', error);
+      
+      // Fallback to HTTP API if SDK fails
+      try {
+        const httpModel = process.env.GEMINI_MODEL || 'models/gemini-2.5-flash';
+        const httpText = await callGeminiHTTP(httpModel, systemPrompt);
+        if (httpText && httpText.trim()) {
+          console.log('[Content AI] Successfully generated content with Gemini HTTP API');
+          return httpText.trim();
+        }
+      } catch (httpError) {
+        console.error('[Content AI] Gemini HTTP error:', httpError);
+      }
+    }
+  }
+  
+  // Fallback to local generation if Gemini is not available
+  console.log('[Content AI] Falling back to local content generation');
   
   const platformTemplates = {
     facebook: 'منشور فيسبوك جذاب',
@@ -228,6 +325,24 @@ async function generateContentLocally(prompt, platform, tone, length) {
 - تأكد من أن المحتوى يتناسب مع هوية علامتك التجارية
 
 يمكنك نسخ هذا المحتوى واستخدامه كأساس لمنشورك، أو طلب تعديلات إضافية.`;
+}
+
+// HTTP fallback for Gemini
+async function callGeminiHTTP(model, prompt) {
+  const url = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(process.env.GOOGLE_API_KEY)}`;
+  const body = {
+    contents: [
+      { role: 'user', parts: [{ text: prompt }] }
+    ]
+  };
+  const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Gemini HTTP ${resp.status}: ${text}`);
+  }
+  const data = await resp.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return text?.trim();
 }
 
 module.exports = {

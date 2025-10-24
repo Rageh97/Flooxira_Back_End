@@ -6,6 +6,24 @@ const {
 } = require('../models/telegramTemplate');
 const { Op } = require('sequelize');
 
+// Helper function to recursively load all child buttons
+async function loadAllChildButtons(buttons) {
+  if (!buttons || buttons.length === 0) return buttons;
+  
+  for (let button of buttons) {
+    const childButtons = await TelegramTemplateButton.findAll({
+      where: { parentButtonId: button.id, isActive: true },
+      order: [['displayOrder', 'ASC']]
+    });
+    
+    if (childButtons.length > 0) {
+      button.ChildButtons = await loadAllChildButtons(childButtons);
+    }
+  }
+  
+  return buttons;
+}
+
 // Create new template
 const createTemplate = async (req, res) => {
   try {
@@ -111,15 +129,8 @@ const getTemplates = async (req, res) => {
         {
           model: TelegramTemplateButton,
           as: 'buttons',
-          where: { parentButtonId: null },
-          required: false,
-          include: [
-            {
-              model: TelegramTemplateButton,
-              as: 'ChildButtons',
-              required: false
-            }
-          ]
+          where: { parentButtonId: null, isActive: true },
+          required: false
         },
         {
           model: TelegramTemplateVariable,
@@ -129,6 +140,13 @@ const getTemplates = async (req, res) => {
       ],
       order: [['displayOrder', 'ASC'], ['createdAt', 'DESC']]
     });
+
+    // Load all child buttons recursively for each template
+    for (let template of templates) {
+      if (template.buttons) {
+        template.buttons = await loadAllChildButtons(template.buttons);
+      }
+    }
 
     // Parse JSON fields back to arrays
     const parsedTemplates = templates.map(template => {
@@ -176,15 +194,8 @@ const getTemplate = async (req, res) => {
         {
           model: TelegramTemplateButton,
           as: 'buttons',
-          where: { parentButtonId: null },
-          required: false,
-          include: [
-            {
-              model: TelegramTemplateButton,
-              as: 'ChildButtons',
-              required: false
-            }
-          ]
+          where: { parentButtonId: null, isActive: true },
+          required: false
         },
         {
           model: TelegramTemplateVariable,
@@ -193,6 +204,10 @@ const getTemplate = async (req, res) => {
         }
       ]
     });
+
+    if (template && template.buttons) {
+      template.buttons = await loadAllChildButtons(template.buttons);
+    }
 
     if (!template) {
       return res.status(404).json({
@@ -473,15 +488,7 @@ const getActiveTemplates = async (req, res) => {
           model: TelegramTemplateButton,
           as: 'buttons',
           where: { parentButtonId: null, isActive: true },
-          required: false,
-          include: [
-            {
-              model: TelegramTemplateButton,
-              as: 'ChildButtons',
-              where: { isActive: true },
-              required: false
-            }
-          ]
+          required: false
         },
         {
           model: TelegramTemplateVariable,
@@ -491,6 +498,13 @@ const getActiveTemplates = async (req, res) => {
       ],
       order: [['displayOrder', 'ASC']]
     });
+
+    // Load all child buttons recursively for each template
+    for (let template of templates) {
+      if (template.buttons) {
+        template.buttons = await loadAllChildButtons(template.buttons);
+      }
+    }
 
     // Parse JSON fields back to arrays
     const parsedTemplates = templates.map(template => {

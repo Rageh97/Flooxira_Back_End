@@ -15,7 +15,14 @@ async function publicPlans(req, res) {
 
 async function listPlans(req, res) {
   try {
+    // If user is admin, show all plans
+    // Otherwise, show only active plans
+    const isAdmin = req.user && req.user.role === 'admin';
+    
+    const whereClause = isAdmin ? {} : { isActive: true };
+    
     const plans = await Plan.findAll({
+      where: whereClause,
       order: [['createdAt', 'DESC']]
     });
     return res.json({ plans });

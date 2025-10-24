@@ -5,7 +5,8 @@ async function listCredentials(req, res) {
     const rows = await PlatformCredential.findAll({ where: { userId: req.user.id }, order: [['platform', 'ASC']] });
     return res.json({ success: true, credentials: rows.map(r => ({ id: r.id, platform: r.platform, clientId: r.clientId, redirectUri: r.redirectUri, metadata: r.metadata })) });
   } catch (e) {
-    return res.status(500).json({ success: false, message: 'Failed to list credentials' });
+    console.error('Error listing platform credentials:', e);
+    return res.status(500).json({ success: false, message: 'Failed to list credentials', error: e.message });
   }
 }
 
@@ -16,7 +17,8 @@ async function getCredential(req, res) {
     if (!row) return res.status(404).json({ success: false, message: 'Not found' });
     return res.json({ success: true, credential: { id: row.id, platform: row.platform, clientId: row.clientId, redirectUri: row.redirectUri, metadata: row.metadata } });
   } catch (e) {
-    return res.status(500).json({ success: false, message: 'Failed to get credential' });
+    console.error('Error getting platform credential:', e);
+    return res.status(500).json({ success: false, message: 'Failed to get credential', error: e.message });
   }
 }
 
@@ -38,7 +40,8 @@ async function upsertCredential(req, res) {
     }
     return res.json({ success: true });
   } catch (e) {
-    return res.status(500).json({ success: false, message: 'Failed to save credential' });
+    console.error('Error saving platform credential:', e);
+    return res.status(500).json({ success: false, message: 'Failed to save credential', error: e.message });
   }
 }
 
@@ -50,7 +53,8 @@ async function deleteCredential(req, res) {
     await row.destroy();
     return res.json({ success: true });
   } catch (e) {
-    return res.status(500).json({ success: false, message: 'Failed to delete credential' });
+    console.error('Error deleting platform credential:', e);
+    return res.status(500).json({ success: false, message: 'Failed to delete credential', error: e.message });
   }
 }
 

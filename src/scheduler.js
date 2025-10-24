@@ -11,6 +11,8 @@ const { WhatsappSchedule } = require('./models/whatsappSchedule');
 const whatsappService = require('./services/whatsappService');
 const tgBotService = require('./services/telegramBotService');
 const { TelegramSchedule } = require('./models/telegramSchedule');
+const { Reminder } = require('./models/reminder');
+const limitService = require('./services/limitService');
 
 async function tryPublishNow(post) {
   console.log('Attempting to publish post:', {
@@ -261,6 +263,40 @@ async function tryPublishNow(post) {
       }
     }
 
+    // WhatsApp stories are not supported - skip
+    if (post.platforms.includes('whatsapp') && post.format === 'story') {
+      console.log('[WhatsApp] Stories are not supported, skipping...');
+      publishResults.whatsapp = { error: 'WhatsApp stories are not supported. Use Telegram instead.' };
+    }
+
+    // Handle Telegram story posting if enabled
+    if (post.platforms.includes('telegram')) {
+      console.log('[Telegram] Attempting to publish story for user:', post.userId);
+      
+      if (post.format !== 'story') {
+        console.log('[Telegram] Post format is not story:', post.format);
+        publishResults.telegram = { error: 'Telegram only supports story format from this feature' };
+      } else if (!post.mediaUrl) {
+        console.log('[Telegram] No media URL provided for Telegram story');
+        publishResults.telegram = { error: 'Telegram stories require media (photo or video)' };
+      } else {
+        try {
+          const telegramResult = await tryPublishToTelegram(post);
+          if (telegramResult && telegramResult.success) {
+            post.telegramPostId = telegramResult.id || `tg_${Date.now()}`;
+            publishResults.telegram = telegramResult;
+            publishedToAny = true;
+            console.log('[Telegram] Story published successfully to channels/groups');
+          } else {
+            publishResults.telegram = { error: telegramResult?.message || 'Failed to publish Telegram story' };
+          }
+        } catch (telegramError) {
+          console.error('[Telegram] Story publishing failed:', telegramError.message);
+          publishResults.telegram = { error: telegramError.message };
+        }
+      }
+    }
+
     // Update post status based on results
     if (publishedToAny) {
       post.status = 'published';
@@ -268,6 +304,19 @@ async function tryPublishNow(post) {
       await post.save();
       console.log('Post published successfully to at least one platform');
       console.log('Publish results:', publishResults);
+      
+      // Record post usage for each successfully published platform
+      for (const platform of post.platforms) {
+        if (publishResults[platform] && !publishResults[platform].error) {
+          await limitService.recordPostUsage(post.userId, platform, 'published', 1, {
+            postId: post.id,
+            type: post.type,
+            format: post.format,
+            scheduledAt: post.scheduledAt
+          });
+        }
+      }
+      
       return true;
     }
 
@@ -310,7 +359,9 @@ async function tryPublishToInstagram(post, account) {
       throw new Error('Instagram requires media content');
     }
     
-    const token = require('./utils/crypto').decrypt(account.accessToken);
+    // Use page-specific token if available, otherwise fall back to user token
+    const tokenToUse = account.pageAccessToken || account.accessToken;
+    const token = require('./utils/crypto').decrypt(tokenToUse);
     console.log('Publishing to Instagram:', { 
       instagramId: account.instagramId, 
       postType: post.type, 
@@ -385,30 +436,56 @@ async function publishInstagramPost(post, instagramId, token) {
     
     return { id: publishData.id, type: 'post' };
   } else if (post.type === 'video') {
-    // Create video media container
+    // Create REELS media container (Instagram now requires REELS for videos)
     const mediaResponse = await fetch(
       `https://graph.facebook.com/v21.0/${instagramId}/media`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          media_type: 'VIDEO',
+          media_type: 'REELS',
           video_url: post.mediaUrl,
           caption: `${post.content || ''} ${post.hashtags || ''}`.trim(),
+          share_to_feed: 'true', // This ensures it appears in the main feed
           access_token: token
         })
       }
     );
     
     const mediaData = await mediaResponse.json();
-    console.log('Instagram video creation response:', mediaData);
+    console.log('Instagram REELS creation response:', mediaData);
     
     if (mediaData.error) {
-      console.error('Instagram video creation error:', mediaData.error);
+      console.error('Instagram REELS creation error:', mediaData.error);
       throw new Error(mediaData.error.message);
     }
     
-    // Publish the video
+    // Wait for video processing (REELS may take longer to process)
+    let statusCheckAttempts = 0;
+    const maxAttempts = 30; // Wait up to 60 seconds
+    let containerStatus = 'IN_PROGRESS';
+    
+    while (containerStatus === 'IN_PROGRESS' && statusCheckAttempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+      
+      const statusResponse = await fetch(
+        `https://graph.facebook.com/v21.0/${mediaData.id}?fields=status_code&access_token=${token}`
+      );
+      const statusData = await statusResponse.json();
+      
+      if (statusData.status_code) {
+        containerStatus = statusData.status_code;
+        console.log(`Instagram REELS processing status: ${containerStatus}`);
+      }
+      
+      statusCheckAttempts++;
+    }
+    
+    if (containerStatus !== 'FINISHED') {
+      throw new Error(`Video processing did not complete in time. Status: ${containerStatus}`);
+    }
+    
+    // Publish the REELS
     const publishResponse = await fetch(
       `https://graph.facebook.com/v21.0/${instagramId}/media_publish`,
       {
@@ -465,6 +542,31 @@ async function publishInstagramReel(post, instagramId, token) {
   if (mediaData.error) {
     console.error('Instagram Reel creation error:', mediaData.error);
     throw new Error(mediaData.error.message);
+  }
+  
+  // Wait for video processing (REELS may take longer to process)
+  let statusCheckAttempts = 0;
+  const maxAttempts = 30; // Wait up to 60 seconds
+  let containerStatus = 'IN_PROGRESS';
+  
+  while (containerStatus === 'IN_PROGRESS' && statusCheckAttempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+    
+    const statusResponse = await fetch(
+      `https://graph.facebook.com/v21.0/${mediaData.id}?fields=status_code&access_token=${token}`
+    );
+    const statusData = await statusResponse.json();
+    
+    if (statusData.status_code) {
+      containerStatus = statusData.status_code;
+      console.log(`Instagram Reel processing status: ${containerStatus}`);
+    }
+    
+    statusCheckAttempts++;
+  }
+  
+  if (containerStatus !== 'FINISHED') {
+    throw new Error(`Reel processing did not complete in time. Status: ${containerStatus}`);
   }
   
   // Publish the reel
@@ -583,7 +685,7 @@ async function tryPublishToFacebook(post, account) {
       } else if (post.type === 'video') {
         url = `https://graph.facebook.com/v21.0/${account.groupId}/videos`;
         const params = new URLSearchParams();
-        params.set('video_url', post.mediaUrl || '');
+        params.set('file_url', post.mediaUrl || '');
         if (post.content) params.set('description', post.content);
         params.set('access_token', groupToken);
         body = params;
@@ -594,7 +696,9 @@ async function tryPublishToFacebook(post, account) {
       return { id: data.id || data.post_id, type: 'group_post' };
     } else if (account.pageId) {
       // Page posting via Graph API
-      const pageToken = require('./utils/crypto').decrypt(account.accessToken);
+      // Use page-specific token if available, otherwise fall back to user token
+      const tokenToUse = account.pageAccessToken || account.accessToken;
+      const pageToken = require('./utils/crypto').decrypt(tokenToUse);
       let url = `https://graph.facebook.com/v21.0/${account.pageId}/feed`;
       let body;
       if (post.type === 'text') {
@@ -618,7 +722,7 @@ async function tryPublishToFacebook(post, account) {
       } else if (post.type === 'video') {
         url = `https://graph.facebook.com/v21.0/${account.pageId}/videos`;
         const params = new URLSearchParams();
-        params.set('video_url', post.mediaUrl || '');
+        params.set('file_url', post.mediaUrl || '');
         if (post.content || post.hashtags) params.set('description', `${post.content || ''} ${post.hashtags || ''}`.trim());
         params.set('access_token', pageToken);
         body = params;
@@ -1182,24 +1286,41 @@ async function tryPublishToTwitter(post, account) {
 
     // If there's media, upload it first
     let mediaIds = [];
-    if (post.mediaUrl && (post.type === 'photo' || post.type === 'video')) {
+    if (post.mediaUrl && post.type === 'photo') {
       try {
-        // Upload media to Twitter
+        console.log('Downloading image for Twitter:', post.mediaUrl);
+        // Download the image first
+        const imageResponse = await fetch(post.mediaUrl);
+        if (!imageResponse.ok) {
+          throw new Error(`Failed to download image: ${imageResponse.status}`);
+        }
+        
+        const imageBuffer = await imageResponse.arrayBuffer();
+        const base64Image = Buffer.from(imageBuffer).toString('base64');
+        
+        console.log('Uploading image to Twitter (size:', imageBuffer.byteLength, 'bytes)');
+        
+        // Upload media to Twitter using base64
+        const FormData = require('form-data');
+        const form = new FormData();
+        form.append('media_data', base64Image);
+        
         const mediaResponse = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
           method: 'POST',
           headers: { 
             'Authorization': `Bearer ${account.accessToken}`,
-            'Content-Type': 'application/x-www-form-urlencoded'
+            ...form.getHeaders()
           },
-          body: new URLSearchParams({
-            media_url: post.mediaUrl
-          })
+          body: form
         });
         
         if (mediaResponse.ok) {
           const mediaData = await mediaResponse.json();
           mediaIds.push(mediaData.media_id_string);
-          console.log('Media uploaded to Twitter:', mediaData.media_id_string);
+          console.log('Media uploaded to Twitter successfully:', mediaData.media_id_string);
+        } else {
+          const errorData = await mediaResponse.text();
+          console.log('Twitter media upload failed:', errorData);
         }
       } catch (mediaError) {
         console.log('Failed to upload media to Twitter:', mediaError.message);
@@ -1476,7 +1597,7 @@ function startScheduler() {
             job.result = result?.message || null;
             await job.save();
           } else if (job.type === 'campaign') {
-            const { rows, messageTemplate, throttleMs } = job.payload || {};
+            const { rows, messageTemplate, throttleMs, isRecurring, recurringInterval } = job.payload || {};
             let media = null;
             if (job.mediaPath) {
               const fs = require('fs');
@@ -1485,6 +1606,24 @@ function startScheduler() {
               media = { buffer, filename: path.basename(job.mediaPath), mimetype: undefined };
             }
             const result = await whatsappService.startCampaign(job.userId, rows || [], messageTemplate || '', parseInt(throttleMs || 3000), media);
+            
+            // If this is a recurring campaign, schedule the next occurrence
+            if (isRecurring && recurringInterval && result?.success) {
+              const nextSchedule = new Date(job.scheduledAt);
+              nextSchedule.setHours(nextSchedule.getHours() + parseInt(recurringInterval));
+              
+              await WhatsappSchedule.create({
+                userId: job.userId,
+                type: 'campaign',
+                payload: job.payload,
+                mediaPath: job.mediaPath,
+                scheduledAt: nextSchedule,
+                status: 'pending'
+              });
+              
+              console.log(`[Scheduler] Recurring campaign scheduled for next occurrence: ${nextSchedule.toISOString()}`);
+            }
+            
             job.status = result?.success ? 'completed' : 'failed';
             job.result = result?.message || null;
             await job.save();
@@ -1572,6 +1711,230 @@ function startScheduler() {
       console.log('[Scheduler][TG] error:', e.message);
     }
   });
+
+  // Check for due reminders every minute
+  cron.schedule('* * * * *', async () => {
+    const now = new Date();
+    console.log(`[Scheduler] Checking for due reminders at ${now.toISOString()}`);
+    
+    try {
+      // Find active reminders where either reminderTime1 or reminderTime2 is due
+      const dueReminders = await Reminder.findAll({
+        where: {
+          status: 'active',
+          [Op.or]: [
+            {
+              reminderTime1: { [Op.lte]: now },
+              sentAt1: null
+            },
+            {
+              reminderTime2: { [Op.lte]: now },
+              sentAt2: null
+            }
+          ]
+        }
+      });
+
+      if (dueReminders.length > 0) {
+        console.log(`[Scheduler] Found ${dueReminders.length} due reminders`);
+        
+        for (const reminder of dueReminders) {
+          try {
+            const needSendFirst = !reminder.sentAt1 && new Date(reminder.reminderTime1) <= now;
+            const needSendSecond = !reminder.sentAt2 && new Date(reminder.reminderTime2) <= now;
+
+            if (needSendFirst) {
+              console.log(`[Scheduler] Sending first reminder (2 hours before) for reminder ${reminder.id} to ${reminder.whatsappNumber}`);
+              console.log(`[Scheduler] User ${reminder.userId} session check:`, whatsappService.userClients.has(reminder.userId));
+              
+              const message = `⏰ تذكير قبل ساعتين:\n${reminder.message}`;
+              
+              try {
+                const sendResult = await whatsappService.sendMessage(reminder.userId, reminder.whatsappNumber, message);
+                
+                if (sendResult === true || sendResult?.success === true) {
+                  reminder.sentAt1 = new Date();
+                  await reminder.save();
+                  console.log(`✅ [Scheduler] First reminder ${reminder.id} sent successfully`);
+                } else {
+                  console.error(`❌ [Scheduler] Failed to send first reminder ${reminder.id}: WhatsApp session not available or send failed`);
+                }
+              } catch (sendError) {
+                console.error(`❌ [Scheduler] Failed to send first reminder ${reminder.id}:`, sendError?.message || sendError);
+              }
+            }
+
+            if (needSendSecond) {
+              console.log(`[Scheduler] Sending second reminder (1 hour before) for reminder ${reminder.id} to ${reminder.whatsappNumber}`);
+              console.log(`[Scheduler] User ${reminder.userId} session check:`, whatsappService.userClients.has(reminder.userId));
+              
+              const message = `⏰ تذكير قبل ساعة واحدة:\n${reminder.message}`;
+              
+              try {
+                const sendResult = await whatsappService.sendMessage(reminder.userId, reminder.whatsappNumber, message);
+                
+                if (sendResult === true || sendResult?.success === true) {
+                  reminder.sentAt2 = new Date();
+                  await reminder.save();
+                  console.log(`✅ [Scheduler] Second reminder ${reminder.id} sent successfully`);
+                } else {
+                  console.error(`❌ [Scheduler] Failed to send second reminder ${reminder.id}: WhatsApp session not available or send failed`);
+                }
+              } catch (sendError) {
+                console.error(`❌ [Scheduler] Failed to send second reminder ${reminder.id}:`, sendError?.message || sendError);
+              }
+            }
+
+            // If both reminders have been sent, mark as sent
+            if (reminder.sentAt1 && reminder.sentAt2) {
+              reminder.status = 'sent';
+              await reminder.save();
+              console.log(`[Scheduler] Reminder ${reminder.id} completed (both reminders sent)`);
+            }
+          } catch (error) {
+            console.error(`[Scheduler] Error processing reminder ${reminder.id}:`, error);
+          }
+        }
+      } else {
+        console.log(`[Scheduler] No due reminders found`);
+      }
+    } catch (error) {
+      console.error(`[Scheduler] Error checking reminders:`, error);
+    }
+  });
+}
+
+// Publish Telegram Story (to channels and groups where bot is admin)
+async function tryPublishToTelegram(post) {
+  try {
+    console.log('[Telegram] Publishing story:', {
+      userId: post.userId,
+      type: post.type,
+      hasMedia: !!post.mediaUrl,
+      hasContent: !!post.content
+    });
+
+    // Get user's telegram bot info
+    const TelegramBotAccount = require('./models/telegramBotAccount');
+    const botAccount = await TelegramBotAccount.findOne({ where: { userId: post.userId } });
+    
+    if (!botAccount || !botAccount.token) {
+      throw new Error('Telegram bot not configured for this user');
+    }
+
+    if (!post.mediaUrl) {
+      throw new Error('Media URL is required for Telegram story');
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const axios = require('axios');
+    const os = require('os');
+    
+    let mediaPath;
+    let isTemporary = false;
+
+    // Check if mediaUrl is a URL or local path
+    if (post.mediaUrl.startsWith('http://') || post.mediaUrl.startsWith('https://')) {
+      // Download from URL to temporary file
+      console.log('[Telegram] Downloading media from URL:', post.mediaUrl);
+      
+      try {
+        const response = await axios.get(post.mediaUrl, {
+          responseType: 'arraybuffer',
+          timeout: 30000
+        });
+        
+        const buffer = Buffer.from(response.data);
+        
+        // Extract extension from URL
+        const urlPath = new URL(post.mediaUrl).pathname;
+        const ext = path.extname(urlPath) || '.jpg';
+        
+        // Create temporary file
+        const tempDir = os.tmpdir();
+        const tempFileName = `telegram_story_${Date.now()}${ext}`;
+        mediaPath = path.join(tempDir, tempFileName);
+        
+        fs.writeFileSync(mediaPath, buffer);
+        isTemporary = true;
+        
+        console.log('[Telegram] Downloaded media to temp file:', mediaPath, 'Size:', buffer.length);
+      } catch (downloadError) {
+        console.error('[Telegram] Error downloading media:', downloadError.message);
+        throw new Error(`Failed to download media: ${downloadError.message}`);
+      }
+    } else {
+      // Local file path
+      mediaPath = path.join(__dirname, '..', post.mediaUrl);
+      
+      if (!fs.existsSync(mediaPath)) {
+        throw new Error(`Media file not found: ${mediaPath}`);
+      }
+    }
+
+    // Get bot's admin channels and groups
+    const targets = await tgBotService.getBotAdminChannels(post.userId);
+    
+    if (!targets || targets.length === 0) {
+      throw new Error('No Telegram channels/groups where bot is admin');
+    }
+
+    console.log(`[Telegram] Found ${targets.length} target channels/groups`);
+
+    // Send to all channels/groups
+    const results = await tgBotService.sendMediaToMultipleTargets(
+      post.userId,
+      targets,
+      mediaPath,
+      post.content || '',
+      post.type // 'photo' or 'video'
+    );
+
+    // Clean up temporary file
+    if (isTemporary && mediaPath) {
+      try {
+        fs.unlinkSync(mediaPath);
+        console.log('[Telegram] Cleaned up temporary file:', mediaPath);
+      } catch (cleanupError) {
+        console.error('[Telegram] Failed to cleanup temp file:', cleanupError.message);
+      }
+    }
+
+    if (results && results.success) {
+      console.log(`[Telegram] Story published to ${results.sent || 0} channels/groups`);
+      return {
+        success: true,
+        id: `tg_story_${Date.now()}`,
+        platform: 'telegram',
+        sent: results.sent || 0,
+        failed: results.failed || 0,
+        message: `Telegram story published to ${results.sent || 0} channels/groups`
+      };
+    } else {
+      throw new Error(results?.message || 'Failed to publish to Telegram');
+    }
+  } catch (error) {
+    console.error('[Telegram] Story publishing error:', error);
+    
+    // Clean up temporary file on error
+    if (isTemporary && mediaPath) {
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(mediaPath)) {
+          fs.unlinkSync(mediaPath);
+          console.log('[Telegram] Cleaned up temporary file after error:', mediaPath);
+        }
+      } catch (cleanupError) {
+        console.error('[Telegram] Failed to cleanup temp file:', cleanupError.message);
+      }
+    }
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
 }
 
 module.exports = { startScheduler, tryPublishNow };

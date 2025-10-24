@@ -48,6 +48,12 @@ async function me(req, res) {
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
     if (!token) return res.status(401).json({ message: 'Unauthorized' });
     const payload = jwt.verify(token, JWT_SECRET);
+    
+    // إذا كان موظف، يرفض الطلب
+    if (payload.role === 'employee') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
     const user = await User.findByPk(payload.sub, { attributes: ['id','name','email','phone','role'] });
     if (!user) return res.status(401).json({ message: 'Unauthorized' });
     return res.json({ user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role } });

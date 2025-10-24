@@ -52,9 +52,9 @@ async function getFacebookPages(req, res) {
       console.log('App Secret (first 4 chars):', process.env.FB_APP_SECRET.substring(0, 4) + '...');
     }
     
-    // First, check what type of token we have
+    // First, check what type of token we have (without email field for pages)
     const meResponse = await fetch(
-      `https://graph.facebook.com/v21.0/me?access_token=${token}&fields=id,name,email`,
+      `https://graph.facebook.com/v21.0/me?access_token=${token}&fields=id,name`,
       { timeout: 10000 }
     );
     
@@ -96,7 +96,7 @@ async function getFacebookPages(req, res) {
           }];
           
           console.log(`Found ${pages.length} Facebook page (page token)`);
-          return res.json({ pages });
+          return res.json({ success: true, pages });
         }
       }
     } catch (error) {
@@ -168,7 +168,7 @@ async function getFacebookPages(req, res) {
             }];
             
             console.log(`Found ${pages.length} Facebook page (direct access)`);
-            return res.json({ pages });
+            return res.json({ success: true, pages });
           }
         } else {
           const errorText = await pageResponse.text();
@@ -200,7 +200,7 @@ async function getFacebookPages(req, res) {
             }));
             
             console.log(`Found ${pages.length} Facebook pages (alternative method)`);
-            return res.json({ pages });
+            return res.json({ success: true, pages });
           }
         }
       } catch (error) {
@@ -231,7 +231,7 @@ async function getFacebookPages(req, res) {
             }));
             
             console.log(`Found ${pages.length} Facebook pages with roles`);
-            return res.json({ pages });
+            return res.json({ success: true, pages });
           }
         } else {
           const errorText = await rolesResponse.text();
@@ -267,7 +267,7 @@ async function getFacebookPages(req, res) {
               }));
               
               console.log(`Found ${pages.length} Facebook pages with API ${version}`);
-              return res.json({ pages });
+              return res.json({ success: true, pages });
             }
           } else {
             const errorText = await versionResponse.text();
@@ -336,7 +336,7 @@ async function getFacebookPages(req, res) {
             }));
             
             console.log(`Found ${pages.length} Facebook pages via app connection`);
-            return res.json({ pages });
+            return res.json({ success: true, pages });
           }
         } else {
           const errorText = await appResponse.text();
@@ -374,7 +374,7 @@ async function getFacebookPages(req, res) {
             }));
             
             console.log(`Found ${pages.length} Instagram-linked Facebook pages`);
-            return res.json({ pages });
+            return res.json({ success: true, pages });
           }
         } else {
           const errorText = await instagramResponse.text();
@@ -414,7 +414,7 @@ async function getFacebookPages(req, res) {
               }));
               
               console.log(`Found ${pages.length} Facebook pages through business manager`);
-              return res.json({ pages });
+              return res.json({ success: true, pages });
             }
           }
         }
@@ -452,7 +452,7 @@ async function getFacebookPages(req, res) {
             }];
             
             console.log(`Found ${pages.length} Instagram-linked Facebook page (direct access)`);
-            return res.json({ pages });
+            return res.json({ success: true, pages });
           }
         } else {
           const errorText = await directPageResponse.text();
@@ -490,7 +490,7 @@ async function getFacebookPages(req, res) {
             }));
             
             console.log(`Found ${pages.length} Facebook pages through Instagram endpoint`);
-            return res.json({ pages });
+            return res.json({ success: true, pages });
           }
         } else {
           const errorText = await instagramEndpointResponse.text();
@@ -528,7 +528,7 @@ async function getFacebookPages(req, res) {
             }));
             
             console.log(`Found ${pages.length} Facebook pages using GPT's solution`);
-            return res.json({ pages });
+            return res.json({ success: true, pages });
           }
         } else {
           const errorText = await gptSolutionResponse.text();
@@ -615,7 +615,7 @@ async function getFacebookPages(req, res) {
           }));
           
           console.log(`Found ${pages.length} Facebook pages through user accounts`);
-          return res.json({ pages });
+          return res.json({ success: true, pages });
         } else {
           console.log('No pages found in user accounts field either');
           console.log('User definitely has no Facebook Pages');
@@ -656,17 +656,18 @@ async function getFacebookPages(req, res) {
       console.log('3. SOLUTION: Create a Facebook Page first at facebook.com/pages/create');
       console.log('4. Then connect Instagram to that page');
       
-      return res.json({ 
+      return res.json({
+        success: true,
         pages: [],
         message: 'No Facebook Pages found. You need to create a Facebook Page first before connecting Instagram.',
         solution: 'Go to facebook.com/pages/create to create a page, then connect Instagram to it.'
       });
     }
     
-    return res.json({ pages });
+            return res.json({ success: true, pages });
   } catch (error) {
     console.error('Error getting Facebook pages:', error);
-    return res.status(500).json({ message: 'Failed to get pages', error: error.message });
+    return res.status(500).json({ success: false, message: 'Failed to get pages', error: error.message });
   }
 }
 
@@ -686,9 +687,9 @@ async function selectFacebookPage(req, res) {
     
     const userAccessToken = crypto.decrypt(userAccount.accessToken);
     
-    // Get page details and verify the user has access to this page
+    // Get page details including Instagram account and verify the user has access to this page
     const pageResponse = await fetch(
-      `https://graph.facebook.com/v21.0/${pageId}?fields=name,access_token&access_token=${userAccessToken}`
+      `https://graph.facebook.com/v21.0/${pageId}?fields=name,access_token,instagram_business_account{id,username}&access_token=${userAccessToken}`
     );
     const pageData = await pageResponse.json();
     
@@ -696,30 +697,46 @@ async function selectFacebookPage(req, res) {
       return res.status(400).json({ message: pageData.error.message });
     }
     
-    // Update or create Facebook account with page-specific token
+    console.log('Page data with Instagram:', JSON.stringify(pageData, null, 2));
+    
+    // Extract Instagram account info if available
+    const instagramId = pageData.instagram_business_account?.id || null;
+    const instagramUsername = pageData.instagram_business_account?.username || null;
+    
+    console.log('Instagram account:', { instagramId, instagramUsername });
+    
+    // Update or create Facebook account with page-specific token and Instagram info
     const [account, created] = await FacebookAccount.findOrCreate({
       where: { userId: req.userId },
       defaults: {
         userId: req.userId,
         pageId: pageId,
         destination: 'page',
-        accessToken: crypto.encrypt(pageData.access_token || userAccessToken),
-        name: pageData.name || pageName
+        accessToken: crypto.encrypt(userAccessToken), // Keep user token
+        pageAccessToken: crypto.encrypt(pageData.access_token || userAccessToken), // Page token
+        name: pageData.name || pageName,
+        instagramId: instagramId,
+        instagramUsername: instagramUsername
       }
     });
     
     if (!created) {
       account.pageId = pageId;
       account.destination = 'page';
-      account.accessToken = crypto.encrypt(pageData.access_token || userAccessToken);
+      // Keep user access token, store page token separately
+      account.pageAccessToken = crypto.encrypt(pageData.access_token || userAccessToken);
       account.name = pageData.name || pageName;
+      account.instagramId = instagramId;
+      account.instagramUsername = instagramUsername;
       await account.save();
     }
     
     return res.json({
       success: true,
       pageId: pageId,
-      pageName: pageData.name || pageName
+      pageName: pageData.name || pageName,
+      instagramId: instagramId,
+      instagramUsername: instagramUsername
     });
   } catch (error) {
     console.error('Error selecting Facebook page:', error);
@@ -1303,38 +1320,51 @@ async function selectInstagramAccount(req, res) {
       return res.status(400).json({ message: 'pageId and instagramId are required' });
     }
     
+    // Get the user's Facebook account
+    const existingAccount = await FacebookAccount.findOne({ where: { userId: req.userId } });
+    
     // If no accessToken provided, try to get it from the user's Facebook account
     let tokenToUse = accessToken;
     if (!tokenToUse) {
-      const userAccount = await FacebookAccount.findOne({ where: { userId: req.userId } });
-      if (!userAccount || !userAccount.accessToken) {
+      if (!existingAccount || !existingAccount.accessToken) {
         return res.status(400).json({ message: 'No Facebook account connected. Please connect your Facebook account first.' });
       }
-      tokenToUse = crypto.decrypt(userAccount.accessToken);
+      tokenToUse = crypto.decrypt(existingAccount.accessToken);
     }
     
     console.log('Selecting Instagram account:', { pageId, instagramId, hasToken: !!tokenToUse });
     
-    // Get Instagram account details
-    const instagramResponse = await fetch(
-      `https://graph.facebook.com/v21.0/${instagramId}?fields=id,username,media_count&access_token=${tokenToUse}`,
+    // Get page access token for this specific page
+    const pageResponse = await fetch(
+      `https://graph.facebook.com/v21.0/${pageId}?fields=access_token,instagram_business_account{id,username}&access_token=${tokenToUse}`,
       { timeout: 10000 }
     );
     
-    if (!instagramResponse.ok) {
-      const errorText = await instagramResponse.text();
-      console.error('Instagram API error:', errorText);
-      return res.status(400).json({ message: `Failed to get Instagram account details: ${errorText}` });
+    if (!pageResponse.ok) {
+      const errorText = await pageResponse.text();
+      console.error('Page API error:', errorText);
+      return res.status(400).json({ message: `Failed to get page details: ${errorText}` });
     }
     
-    const instagramData = await instagramResponse.json();
+    const pageData = await pageResponse.json();
     
-    if (instagramData.error) {
-      console.error('Instagram API error:', instagramData.error);
-      return res.status(400).json({ message: instagramData.error.message });
+    if (pageData.error) {
+      console.error('Page API error:', pageData.error);
+      return res.status(400).json({ message: pageData.error.message });
     }
     
-    console.log('Instagram account details:', instagramData);
+    const pageAccessToken = pageData.access_token;
+    const instagramUsername = pageData.instagram_business_account?.username || 'Unknown';
+    
+    console.log('Instagram account details:', { 
+      pageId, 
+      instagramId, 
+      username: instagramUsername,
+      hasPageToken: !!pageAccessToken
+    });
+    
+    // Preserve user access token
+    const userAccessToken = existingAccount ? existingAccount.accessToken : crypto.encrypt(tokenToUse);
     
     // Update or create Facebook account with Instagram info
     const [account, created] = await FacebookAccount.findOrCreate({
@@ -1343,18 +1373,19 @@ async function selectInstagramAccount(req, res) {
         userId: req.userId,
         pageId: pageId,
         instagramId: instagramId,
-        instagramUsername: instagramData.username,
-        destination: 'page', // Keep as page since it's still a Facebook page
-        accessToken: crypto.encrypt(tokenToUse)
+        instagramUsername: instagramUsername,
+        destination: 'page',
+        accessToken: userAccessToken, // Keep user token
+        pageAccessToken: crypto.encrypt(pageAccessToken) // Page token for publishing
       }
     });
     
     if (!created) {
       account.pageId = pageId;
       account.instagramId = instagramId;
-      account.instagramUsername = instagramData.username;
-      account.destination = 'page'; // Keep as page since it's still a Facebook page
-      account.accessToken = crypto.encrypt(tokenToUse);
+      account.instagramUsername = instagramUsername;
+      account.destination = 'page';
+      account.pageAccessToken = crypto.encrypt(pageAccessToken);
       await account.save();
     }
     
@@ -1364,7 +1395,7 @@ async function selectInstagramAccount(req, res) {
       success: true,
       message: 'Instagram account selected successfully',
       instagramId: instagramId,
-      username: instagramData.username
+      username: instagramUsername
     });
   } catch (error) {
     console.error('Error selecting Instagram account:', error);
@@ -1472,6 +1503,116 @@ async function getConnectedAccounts(req, res) {
   }
 }
 
+// Get current Facebook page details
+async function getCurrentFacebookPageDetails(req, res) {
+  try {
+    const account = await FacebookAccount.findOne({ where: { userId: req.userId } });
+    if (!account) {
+      return res.status(404).json({ success: false, message: 'No Facebook account connected' });
+    }
+
+    if (!account.pageId) {
+      return res.json({
+        success: true,
+        pageId: '',
+        pageName: 'لا توجد صفحة محددة',
+        fanCount: 0
+      });
+    }
+
+    // Try to get live page info
+    try {
+      const token = crypto.decrypt(account.accessToken);
+      const pageResponse = await fetch(
+        `https://graph.facebook.com/v21.0/${account.pageId}?access_token=${token}&fields=id,name,fan_count,instagram_business_account{id,username}`,
+        { timeout: 10000 }
+      );
+
+      if (pageResponse.ok) {
+        const pageData = await pageResponse.json();
+        return res.json({
+          success: true,
+          pageId: pageData.id,
+          pageName: pageData.name,
+          fanCount: pageData.fan_count || 0,
+          instagramId: pageData.instagram_business_account?.id,
+          instagramUsername: pageData.instagram_business_account?.username
+        });
+      }
+    } catch (error) {
+      console.log('Facebook page API call failed, using cached data:', error.message);
+    }
+
+    // Fallback to cached data
+    return res.json({
+      success: true,
+      pageId: account.pageId,
+      pageName: account.pageName || 'صفحة Facebook',
+      fanCount: 0
+    });
+  } catch (error) {
+    console.error('Error getting Facebook page details:', error);
+    return res.status(400).json({ success: false, message: 'Failed to get page details' });
+  }
+}
+
+// Get Instagram account details for the connected Facebook page
+async function getInstagramAccountDetails(req, res) {
+  try {
+    const account = await FacebookAccount.findOne({ where: { userId: req.userId } });
+    if (!account) {
+      return res.status(404).json({ success: false, message: 'No Facebook account connected' });
+    }
+
+    // Check if Instagram is connected
+    if (!account.instagramId) {
+      return res.json({
+        success: true,
+        username: 'لا يوجد حساب Instagram مرتبط',
+        followersCount: 0,
+        mediaCount: 0
+      });
+    }
+
+    // Try to get live Instagram data using page token
+    try {
+      const tokenToUse = account.pageAccessToken || account.accessToken;
+      const token = crypto.decrypt(tokenToUse);
+      
+      const instagramResponse = await fetch(
+        `https://graph.facebook.com/v21.0/${account.instagramId}?fields=username,media_count,followers_count,follows_count&access_token=${token}`,
+        { timeout: 10000 }
+      );
+
+      if (instagramResponse.ok) {
+        const instagramData = await instagramResponse.json();
+        return res.json({
+          success: true,
+          username: instagramData.username,
+          followersCount: instagramData.followers_count || 0,
+          followingCount: instagramData.follows_count || 0,
+          mediaCount: instagramData.media_count || 0
+        });
+      } else {
+        console.log('Instagram API call failed, using cached data');
+      }
+    } catch (error) {
+      console.log('Instagram API error, using cached data:', error.message);
+    }
+
+    // Fallback to cached data
+    return res.json({
+      success: true,
+      username: account.instagramUsername || 'غير محدد',
+      followersCount: 0,
+      mediaCount: 0
+    });
+  } catch (error) {
+    console.error('Error getting Instagram account details:', error);
+    return res.status(400).json({ success: false, message: 'Failed to get Instagram details' });
+  }
+}
+
 module.exports = {
   getFacebookAccount,
   getFacebookPages,
@@ -1483,7 +1624,9 @@ module.exports = {
   selectInstagramAccount,
   testFacebookConnection,
   disconnectFacebook,
-  getConnectedAccounts
+  getConnectedAccounts,
+  getCurrentFacebookPageDetails,
+  getInstagramAccountDetails
 };
 
 

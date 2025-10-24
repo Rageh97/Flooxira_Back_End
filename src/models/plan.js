@@ -45,7 +45,18 @@ const Plan = sequelize.define('Plan', {
       canSallaIntegration: false, // إمكانية تكامل سلة
       
       // إدارة المحتوى
-      canManageContent: false // إمكانية إدارة المحتوى
+      canManageContent: false, // إمكانية إدارة المحتوى
+      
+      // إدارة العملاء
+      canManageCustomers: false, // إمكانية إدارة العملاء
+      
+      // تسويق الخدمات
+      canMarketServices: false, // إمكانية تسويق الخدمات
+      maxServices: 0, // عدد الخدمات المسموح بها
+      
+      // إدارة الموظفين
+      canManageEmployees: false, // إمكانية إدارة الموظفين
+      maxEmployees: 0 // عدد الموظفين المسموح به (0 = غير محدود)
     }
   },
   isActive: {

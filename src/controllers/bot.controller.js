@@ -247,4 +247,86 @@ async function uploadExcel(req, res) {
   }
 }
 
-module.exports = { addField, listFields, deleteField, saveData, listData, updateData, deleteData, uploadExcel };
+async function exportData(req, res) {
+  try {
+    const userId = req.userId;
+    
+    // Get all bot data for the user
+    const botData = await BotData.findAll({ 
+      where: { userId }, 
+      order: [['createdAt', 'DESC']] 
+    });
+    
+    if (!botData || botData.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'لا توجد بيانات للتصدير' 
+      });
+    }
+    
+    // Get all unique field names from the data
+    const allFields = new Set();
+    botData.forEach(item => {
+      if (item.data && typeof item.data === 'object') {
+        Object.keys(item.data).forEach(key => allFields.add(key));
+      }
+    });
+    
+    // Convert to array and sort
+    const fieldNames = Array.from(allFields).sort();
+    
+    // Prepare data for Excel
+    const excelData = botData.map((item, index) => {
+      const row = { 'رقم الصف': index + 1 };
+      
+      // Add all fields
+      fieldNames.forEach(fieldName => {
+        row[fieldName] = item.data[fieldName] || '';
+      });
+      
+      // Add metadata
+      row['تاريخ الإنشاء'] = item.createdAt ? new Date(item.createdAt).toLocaleDateString('ar-SA') : '';
+      row['تاريخ التحديث'] = item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('ar-SA') : '';
+      
+      return row;
+    });
+    
+    // Create workbook and worksheet
+    const workbook = xlsx.utils.book_new();
+    const worksheet = xlsx.utils.json_to_sheet(excelData);
+    
+    // Set column widths
+    const columnWidths = [
+      { wch: 10 }, // رقم الصف
+      ...fieldNames.map(() => ({ wch: 20 })), // البيانات
+      { wch: 15 }, // تاريخ الإنشاء
+      { wch: 15 }  // تاريخ التحديث
+    ];
+    worksheet['!cols'] = columnWidths;
+    
+    // Add worksheet to workbook
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'محتوى البوت');
+    
+    // Generate buffer
+    const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    
+    // Set response headers
+    const filename = `bot_content_${new Date().toISOString().split('T')[0]}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    
+    // Send the file
+    res.send(buffer);
+    
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'فشل في تصدير البيانات',
+      error: error.message 
+    });
+  }
+}
+
+module.exports = { addField, listFields, deleteField, saveData, listData, updateData, deleteData, uploadExcel, exportData };

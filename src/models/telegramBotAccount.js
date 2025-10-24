@@ -48,6 +48,11 @@ const TelegramBotAccount = sequelize.define('TelegramBotAccount', {
 	lastSyncAt: {
 		type: DataTypes.DATE,
 		allowNull: true
+	},
+	lastUpdateId: {
+		type: DataTypes.INTEGER,
+		allowNull: true,
+		defaultValue: 0
 	}
 }, {
 	tableName: 'telegram_bot_accounts',

@@ -16,6 +16,7 @@ router.use(requireAuth);
 router.use(requireActiveSubscription);
 router.use(requireTelegramManagement);
 router.post('/connect', ctrl.connect);
+router.post('/disconnect', ctrl.disconnectBot);
 router.get('/info', ctrl.info);
 router.get('/test', ctrl.testBot);
 // Removed legacy send endpoint
@@ -28,6 +29,7 @@ router.get('/chats', ctrl.getChatHistory);
 router.get('/stats', ctrl.getChatStats);
 router.get('/contacts', ctrl.getChatContacts);
 router.get('/chat/:chatId/members', ctrl.getChatMembersInfo);
+router.post('/poll-messages', ctrl.pollMessages);
 router.get('/chat/:chatId/export', ctrl.exportMembers);
 router.get('/bot-chats', ctrl.getBotChats);
 

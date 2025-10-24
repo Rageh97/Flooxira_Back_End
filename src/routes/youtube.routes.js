@@ -11,7 +11,8 @@ const {
   disconnectYouTube,
   testYouTubeConnection,
   getYouTubeChannels,
-  selectYouTubeChannel
+  selectYouTubeChannel,
+  getYouTubeChannelDetails
 } = require('../controllers/youtube.controller');
 
 router.use(auth.requireAuth);
@@ -26,7 +27,7 @@ router.get('/channels', getYouTubeChannels);
 router.post('/select-channel', selectYouTubeChannel);
 
 // Platform details routes
-router.get('/channel', getYouTubeAccount);
+router.get('/channel', getYouTubeChannelDetails);
 
 module.exports = router;
 

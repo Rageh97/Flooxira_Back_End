@@ -4,9 +4,11 @@ const { Plan } = require('../models/plan');
 const { User } = require('../models/user');
 const { Post } = require('../models/post');
 const { WhatsappChat } = require('../models/whatsappChat');
-const { TelegramChat } = require('../models/telegramChat');
-const { Op } = require('sequelize');
-const sequelize = require('../sequelize');
+const TelegramChat = require('../models/telegramChat'); // No destructuring - exported directly
+const { MessageUsage } = require('../models/messageUsage');
+const { Op, fn, col, literal } = require('sequelize');
+const { sequelize } = require('../sequelize');
+const limitService = require('../services/limitService');
 
 // Get user's billing analytics
 async function getBillingAnalytics(req, res) {
@@ -66,39 +68,58 @@ async function getBillingAnalytics(req, res) {
       })
       .reduce((sum, sub) => sum + (sub.plan ? sub.plan.priceCents : 0), 0);
 
+    // Get user limits and usage from limitService
+    const limits = await limitService.getUserLimits(userId);
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    
+    console.log(`[Billing] User ${userId} limits:`, limits);
+    
+    const [whatsappUsage, telegramUsage] = await Promise.all([
+      limitService.getUserUsage(userId, 'whatsapp', currentMonth, currentYear),
+      limitService.getUserUsage(userId, 'telegram', currentMonth, currentYear)
+    ]);
+    
+    console.log(`[Billing] WhatsApp usage for ${userId}: ${whatsappUsage}/${limits.whatsappMessagesPerMonth}`);
+    console.log(`[Billing] Telegram usage for ${userId}: ${telegramUsage}/${limits.telegramMessagesPerMonth}`);
+
     // Get platform usage statistics
     const [postsStats, whatsappStats, telegramStats] = await Promise.all([
       // Posts statistics
       Post.findAll({
         where: { userId: userId },
         attributes: [
-          [sequelize.fn('COUNT', sequelize.col('id')), 'totalPosts'],
-          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN status = "published" THEN 1 END')), 'publishedPosts'],
-          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN status = "scheduled" THEN 1 END')), 'scheduledPosts'],
-          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN status = "draft" THEN 1 END')), 'draftPosts'],
-          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN status = "failed" THEN 1 END')), 'failedPosts']
+          [fn('COUNT', col('id')), 'totalPosts'],
+          [fn('COUNT', literal('CASE WHEN status = "published" THEN 1 END')), 'publishedPosts'],
+          [fn('COUNT', literal('CASE WHEN status = "scheduled" THEN 1 END')), 'scheduledPosts'],
+          [fn('COUNT', literal('CASE WHEN status = "draft" THEN 1 END')), 'draftPosts'],
+          [fn('COUNT', literal('CASE WHEN status = "failed" THEN 1 END')), 'failedPosts']
         ],
         raw: true
       }),
       
-      // WhatsApp statistics
-      WhatsappChat.findAll({
-        where: { userId: userId },
+      // WhatsApp statistics - Only count bot responses for billing
+      MessageUsage.findAll({
+        where: { 
+          userId: userId,
+          platform: 'whatsapp',
+          messageType: 'bot_response'
+        },
         attributes: [
-          [sequelize.fn('COUNT', sequelize.col('id')), 'totalMessages'],
-          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN messageType = "incoming" THEN 1 END')), 'incomingMessages'],
-          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN messageType = "outgoing" THEN 1 END')), 'outgoingMessages']
+          [fn('SUM', col('count')), 'botResponses']
         ],
         raw: true
       }),
       
-      // Telegram statistics
-      TelegramChat.findAll({
-        where: { userId: userId },
+      // Telegram statistics - Only count bot responses for billing
+      MessageUsage.findAll({
+        where: { 
+          userId: userId,
+          platform: 'telegram',
+          messageType: 'bot_response'
+        },
         attributes: [
-          [sequelize.fn('COUNT', sequelize.col('id')), 'totalMessages'],
-          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN messageType = "incoming" THEN 1 END')), 'incomingMessages'],
-          [sequelize.fn('COUNT', sequelize.literal('CASE WHEN messageType = "outgoing" THEN 1 END')), 'outgoingMessages']
+          [fn('SUM', col('count')), 'botResponses']
         ],
         raw: true
       })
@@ -144,11 +165,11 @@ async function getBillingAnalytics(req, res) {
 
     return res.json({
       success: true,
-      analytics: {
+      data: {
         totalRevenue: totalRevenue / 100, // Convert from cents
         monthlyRevenue: monthlyRevenue / 100,
         activeUsers: 1, // Current user
-        messagesSent: (whatsappStats[0]?.totalMessages || 0) + (telegramStats[0]?.totalMessages || 0),
+        messagesSent: (whatsappStats[0]?.botResponses || 0) + (telegramStats[0]?.botResponses || 0),
         growthRate: Math.round(growthRate * 100) / 100,
         conversionRate: Math.round(conversionRate * 100) / 100,
         churnRate: Math.round(churnRate * 100) / 100,
@@ -161,15 +182,27 @@ async function getBillingAnalytics(req, res) {
           failed: parseInt(postsStats[0]?.failedPosts) || 0
         },
         whatsappStats: {
-          totalMessages: parseInt(whatsappStats[0]?.totalMessages) || 0,
-          incomingMessages: parseInt(whatsappStats[0]?.incomingMessages) || 0,
-          outgoingMessages: parseInt(whatsappStats[0]?.outgoingMessages) || 0
+          botResponses: parseInt(whatsappStats[0]?.botResponses) || 0
         },
         telegramStats: {
-          totalMessages: parseInt(telegramStats[0]?.totalMessages) || 0,
-          incomingMessages: parseInt(telegramStats[0]?.incomingMessages) || 0,
-          outgoingMessages: parseInt(telegramStats[0]?.outgoingMessages) || 0
-        }
+          botResponses: parseInt(telegramStats[0]?.botResponses) || 0
+        },
+        // Add limits and usage for message management
+        limits: limits,
+        messageUsage: [
+          {
+            platform: 'whatsapp',
+            count: whatsappUsage,
+            limit: limits.whatsappMessagesPerMonth,
+            remaining: Math.max(0, limits.whatsappMessagesPerMonth - whatsappUsage)
+          },
+          {
+            platform: 'telegram',
+            count: telegramUsage,
+            limit: limits.telegramMessagesPerMonth,
+            remaining: Math.max(0, limits.telegramMessagesPerMonth - telegramUsage)
+          }
+        ]
       },
       currentSubscription: currentSubscription,
       subscriptionHistory: subscriptionHistory
@@ -291,26 +324,24 @@ async function getRevenueChartData(req, res) {
         }
       });
       
-      // Get messages sent in this month
+      // Get bot responses sent in this month
       const [whatsappMessages, telegramMessages] = await Promise.all([
-        WhatsappChat.count({
+        MessageUsage.sum('count', {
           where: {
             userId: userId,
-            messageType: 'outgoing',
-            createdAt: {
-              [Op.gte]: monthStart,
-              [Op.lte]: monthEnd
-            }
+            platform: 'whatsapp',
+            messageType: 'bot_response',
+            month: monthStart.getMonth() + 1,
+            year: monthStart.getFullYear()
           }
         }),
-        TelegramChat.count({
+        MessageUsage.sum('count', {
           where: {
             userId: userId,
-            messageType: 'outgoing',
-            createdAt: {
-              [Op.gte]: monthStart,
-              [Op.lte]: monthEnd
-            }
+            platform: 'telegram',
+            messageType: 'bot_response',
+            month: monthStart.getMonth() + 1,
+            year: monthStart.getFullYear()
           }
         })
       ]);
@@ -321,7 +352,7 @@ async function getRevenueChartData(req, res) {
         month: monthName,
         revenue: monthRevenue / 100, // Convert from cents
         users: 1, // Current user
-        messages: whatsappMessages + telegramMessages
+        messages: (whatsappMessages || 0) + (telegramMessages || 0)
       });
     }
     
@@ -457,6 +488,20 @@ module.exports = {
   getPaymentMethodDistribution,
   getSubscriptionTimeline
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

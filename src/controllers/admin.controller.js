@@ -112,19 +112,214 @@ async function getAllUsers(req, res) {
       return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
     }
 
-    const users = await User.findAll({
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const { count, rows: users } = await User.findAndCountAll({
       attributes: ['id', 'name', 'email', 'phone', 'role', 'isActive', 'createdAt', 'updatedAt'],
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
+      limit,
+      offset
     });
 
-    res.json({ success: true, users });
+    const totalPages = Math.ceil(count / limit);
+
+    res.json({ 
+      success: true, 
+      users,
+      total: count,
+      totalPages,
+      currentPage: page,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1
+    });
   } catch (e) {
     console.error('Error fetching users:', e);
     res.status(500).json({ success: false, message: 'Failed to fetch users', error: e.message });
   }
 }
 
-module.exports = { listAgents, listChats, assignChat, getAllUsers };
+async function getUserDetails(req, res) {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'User ID is required' });
+    }
+
+    const { UserSubscription } = require('../models/userSubscription');
+    const { Plan } = require('../models/plan');
+    const { SubscriptionRequest } = require('../models/subscriptionRequest');
+
+    const user = await User.findByPk(userId, {
+      attributes: ['id', 'name', 'email', 'phone', 'role', 'isActive', 'emailVerifiedAt', 'botPaused', 'botPausedUntil', 'createdAt', 'updatedAt']
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Get user's subscriptions
+    const subscriptions = await UserSubscription.findAll({
+      where: { userId: userId },
+      include: [
+        {
+          model: Plan,
+          as: 'plan',
+          attributes: ['id', 'name', 'priceCents', 'interval', 'features', 'permissions']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Get subscription requests
+    const subscriptionRequests = await SubscriptionRequest.findAll({
+      where: { userId: userId },
+      include: [
+        {
+          model: Plan,
+          as: 'plan',
+          attributes: ['id', 'name', 'priceCents', 'interval']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({ 
+      success: true, 
+      user: {
+        ...user.toJSON(),
+        subscriptions: subscriptions.map(sub => ({
+          ...sub.toJSON(),
+          plan: sub.plan
+        })),
+        subscriptionRequests: subscriptionRequests.map(req => ({
+          ...req.toJSON(),
+          plan: req.plan
+        }))
+      }
+    });
+  } catch (e) {
+    console.error('Error fetching user details:', e);
+    res.status(500).json({ success: false, message: 'Failed to fetch user details', error: e.message });
+  }
+}
+
+async function updateUserStatus(req, res) {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
+    const { userId } = req.params;
+    const { isActive } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'User ID is required' });
+    }
+
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'isActive must be a boolean value' });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Prevent admin from deactivating themselves
+    if (user.id === req.user.id && !isActive) {
+      return res.status(400).json({ success: false, message: 'Cannot deactivate your own account' });
+    }
+
+    user.isActive = isActive;
+    await user.save();
+
+    res.json({ 
+      success: true, 
+      message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        isActive: user.isActive
+      }
+    });
+  } catch (e) {
+    console.error('Error updating user status:', e);
+    res.status(500).json({ success: false, message: 'Failed to update user status', error: e.message });
+  }
+}
+
+async function getAllSubscriptions(req, res) {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Access denied. Admin role required.' });
+    }
+
+    const { UserSubscription } = require('../models/userSubscription');
+    const { Plan } = require('../models/plan');
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const filter = req.query.filter || 'all';
+    const offset = (page - 1) * limit;
+
+    // Build where clause based on filter
+    let whereClause = {};
+    if (filter !== 'all') {
+      whereClause.status = filter;
+    }
+
+    const { count, rows: subscriptions } = await UserSubscription.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email', 'phone', 'isActive']
+        },
+        {
+          model: Plan,
+          as: 'plan',
+          attributes: ['id', 'name', 'priceCents', 'interval', 'features', 'permissions']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit,
+      offset
+    });
+
+    const totalPages = Math.ceil(count / limit);
+
+    res.json({ 
+      success: true, 
+      subscriptions: subscriptions.map(sub => ({
+        ...sub.toJSON(),
+        user: sub.user,
+        plan: sub.plan
+      })),
+      total: count,
+      totalPages,
+      currentPage: page,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1
+    });
+  } catch (e) {
+    console.error('Error fetching subscriptions:', e);
+    res.status(500).json({ success: false, message: 'Failed to fetch subscriptions', error: e.message });
+  }
+}
+
+module.exports = { listAgents, listChats, assignChat, getAllUsers, getUserDetails, updateUserStatus, getAllSubscriptions };
 
 
 

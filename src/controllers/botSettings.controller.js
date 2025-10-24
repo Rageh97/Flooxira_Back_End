@@ -38,6 +38,8 @@ exports.updateBotSettings = async (req, res) => {
   try {
     const userId = req.user.id;
     const updateData = req.body || {};
+    
+    // Handle autoReplyTemplateId conversion
     if (updateData.autoReplyTemplateId !== undefined) {
       if (updateData.autoReplyTemplateId === null || updateData.autoReplyTemplateId === '') {
         updateData.autoReplyTemplateId = null;
@@ -71,6 +73,26 @@ exports.updateBotSettings = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Context window must be between 5 and 50'
+      });
+    }
+
+    // Validate working hours settings
+    if (updateData.workingHoursEnabled && updateData.workingHoursStart && updateData.workingHoursEnd) {
+      const startTime = new Date(`2000-01-01T${updateData.workingHoursStart}`);
+      const endTime = new Date(`2000-01-01T${updateData.workingHoursEnd}`);
+      
+      if (startTime >= endTime) {
+        return res.status(400).json({
+          success: false,
+          message: 'وقت البداية يجب أن يكون قبل وقت النهاية'
+        });
+      }
+    }
+
+    if (updateData.workingDays && !Array.isArray(updateData.workingDays)) {
+      return res.status(400).json({
+        success: false,
+        message: 'أيام العمل يجب أن تكون مصفوفة'
       });
     }
     
@@ -154,19 +176,12 @@ exports.testAIResponse = async (req, res) => {
       });
     }
     
-    // Import bot search service
-    const { searchOrAnswer } = require('../services/botSearchService');
-    
-    // Test the response
-    const response = await searchOrAnswer(testMessage, userId, settings);
-    
+    // For now, just return the settings - AI integration can be added later
     res.json({
       success: true,
       data: {
         testMessage,
-        response,
         settings: {
-          aiProvider: settings.aiProvider,
           personality: settings.personality,
           dialect: settings.dialect,
           temperature: settings.temperature
@@ -188,18 +203,13 @@ exports.getAvailableModels = async (req, res) => {
   try {
     const models = {
       openai: [
-        'gpt-4o',
-        'gpt-4o-mini',
-        'gpt-4-turbo',
-        'gpt-4',
-        'gpt-3.5-turbo'
+        { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable model' },
+        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Faster and cheaper' },
+        { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast and efficient' }
       ],
       gemini: [
-        'gemini-2.5-flash',
-        'gemini-1.5-flash-latest',
-        'gemini-1.5-pro-latest',
-        'gemini-pro',
-        'gemini-1.0-pro'
+        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and efficient' },
+        { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Most capable Gemini model' }
       ]
     };
     
@@ -224,29 +234,29 @@ exports.getPersonalityTemplates = async (req, res) => {
       professional: {
         name: 'Professional',
         description: 'Formal and business-like responses',
-        systemPrompt: 'You are a professional customer service representative. Respond formally and helpfully.',
-        greetingPrompt: 'Welcome! How can I assist you today?',
-        farewellPrompt: 'Thank you for contacting us. Have a great day!'
+        systemPrompt: 'You are a professional customer service representative. Maintain a formal tone and provide helpful, accurate information.',
+        greetingPrompt: 'Hello! How can I assist you today?',
+        farewellPrompt: 'Thank you for your time. Good day.'
       },
       friendly: {
         name: 'Friendly',
         description: 'Warm and approachable responses',
-        systemPrompt: 'You are a friendly and helpful assistant. Be warm and personable in your responses.',
-        greetingPrompt: 'Hi there! 😊 How can I help you today?',
-        farewellPrompt: 'Thanks for chatting! Take care! 😊'
+        systemPrompt: 'You are a friendly and helpful assistant. Be warm, empathetic, and make customers feel comfortable.',
+        greetingPrompt: 'Hi there! I\'m here to help you with anything you need.',
+        farewellPrompt: 'Thanks for chatting! Have a great day!'
       },
       casual: {
         name: 'Casual',
         description: 'Relaxed and informal responses',
-        systemPrompt: 'You are a casual and relaxed assistant. Use informal language and be conversational.',
-        greetingPrompt: 'Hey! What\'s up? How can I help?',
-        farewellPrompt: 'Catch you later! 👋'
+        systemPrompt: 'You are a casual and easygoing assistant. Keep things light and conversational.',
+        greetingPrompt: 'Hey! What\'s up? How can I help you today?',
+        farewellPrompt: 'Catch you later! Take care!'
       },
       formal: {
         name: 'Formal',
         description: 'Very formal and structured responses',
-        systemPrompt: 'You are a formal assistant. Use proper business language and maintain professionalism.',
-        greetingPrompt: 'Good day. How may I be of assistance?',
+        systemPrompt: 'You are a formal business representative. Use proper business etiquette and formal language.',
+        greetingPrompt: 'Good day. How may I be of assistance to you?',
         farewellPrompt: 'Thank you for your time. Good day.'
       },
       marketing: {
