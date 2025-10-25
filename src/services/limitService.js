@@ -98,15 +98,29 @@ class LimitService {
       }
 
       // Get all bot response usage records for this month
-      const usageRecords = await MessageUsage.findAll({
-        where: {
-          userId,
-          platform,
-          month: currentMonth,
-          year: currentYear,
-          messageType: 'bot_response' // Only count bot responses for billing
-        }
-      });
+      let usageRecords;
+      try {
+        usageRecords = await MessageUsage.findAll({
+          where: {
+            userId,
+            platform,
+            month: currentMonth,
+            year: currentYear,
+            messageType: 'bot_response' // Only count bot responses for billing
+          }
+        });
+      } catch (error) {
+        // Fallback to all messages if messageType column doesn't exist
+        console.log(`[LimitService] messageType column not found for ${platform}, using all messages`);
+        usageRecords = await MessageUsage.findAll({
+          where: {
+            userId,
+            platform,
+            month: currentMonth,
+            year: currentYear
+          }
+        });
+      }
 
       // Sum all bot response counts
       const totalUsage = usageRecords.reduce((sum, record) => sum + record.count, 0);
@@ -161,15 +175,29 @@ class LimitService {
       const year = now.getFullYear();
 
       // Find existing usage record for this specific message type
-      let usage = await MessageUsage.findOne({
-        where: {
-          userId,
-          platform,
-          month,
-          year,
-          messageType
-        }
-      });
+      let usage;
+      try {
+        usage = await MessageUsage.findOne({
+          where: {
+            userId,
+            platform,
+            month,
+            year,
+            messageType
+          }
+        });
+      } catch (error) {
+        // Fallback if messageType column doesn't exist
+        console.log(`[LimitService] messageType column not found, using default messageType for ${platform}`);
+        usage = await MessageUsage.findOne({
+          where: {
+            userId,
+            platform,
+            month,
+            year
+          }
+        });
+      }
 
       if (usage) {
         // Update existing record
@@ -177,15 +205,28 @@ class LimitService {
         await usage.save();
       } else {
         // Create new record
-        usage = await MessageUsage.create({
-          userId,
-          platform,
-          messageType,
-          count,
-          month,
-          year,
-          metadata
-        });
+        try {
+          usage = await MessageUsage.create({
+            userId,
+            platform,
+            messageType,
+            count,
+            month,
+            year,
+            metadata
+          });
+        } catch (error) {
+          // Fallback if messageType column doesn't exist
+          console.log(`[LimitService] messageType column not found, creating record without messageType for ${platform}`);
+          usage = await MessageUsage.create({
+            userId,
+            platform,
+            count,
+            month,
+            year,
+            metadata
+          });
+        }
       }
 
       // Clear cache

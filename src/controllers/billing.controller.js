@@ -75,13 +75,24 @@ async function getBillingAnalytics(req, res) {
     
     console.log(`[Billing] User ${userId} limits:`, limits);
     
-    const [whatsappUsage, telegramUsage] = await Promise.all([
-      limitService.getUserUsage(userId, 'whatsapp', currentMonth, currentYear),
-      limitService.getUserUsage(userId, 'telegram', currentMonth, currentYear)
-    ]);
+    let whatsappUsage = 0;
+    let telegramUsage = 0;
     
-    console.log(`[Billing] WhatsApp usage for ${userId}: ${whatsappUsage}/${limits.whatsappMessagesPerMonth}`);
-    console.log(`[Billing] Telegram usage for ${userId}: ${telegramUsage}/${limits.telegramMessagesPerMonth}`);
+    try {
+      const [whatsappUsageResult, telegramUsageResult] = await Promise.all([
+        limitService.getUserUsage(userId, 'whatsapp', currentMonth, currentYear),
+        limitService.getUserUsage(userId, 'telegram', currentMonth, currentYear)
+      ]);
+      
+      whatsappUsage = whatsappUsageResult || 0;
+      telegramUsage = telegramUsageResult || 0;
+      
+      console.log(`[Billing] WhatsApp usage for ${userId}: ${whatsappUsage}/${limits.whatsappMessagesPerMonth}`);
+      console.log(`[Billing] Telegram usage for ${userId}: ${telegramUsage}/${limits.telegramMessagesPerMonth}`);
+    } catch (usageError) {
+      console.error(`[Billing] Error getting usage for user ${userId}:`, usageError);
+      // Continue with default values (0)
+    }
 
     // Get platform usage statistics
     const [postsStats, whatsappStats, telegramStats] = await Promise.all([
@@ -98,31 +109,67 @@ async function getBillingAnalytics(req, res) {
         raw: true
       }),
       
-      // WhatsApp statistics - Only count bot responses for billing
-      MessageUsage.findAll({
-        where: { 
-          userId: userId,
-          platform: 'whatsapp',
-          messageType: 'bot_response'
-        },
-        attributes: [
-          [fn('SUM', col('count')), 'botResponses']
-        ],
-        raw: true
-      }),
+      // WhatsApp statistics - Try to count bot responses, fallback to all messages
+      (async () => {
+        try {
+          const result = await MessageUsage.findAll({
+            where: { 
+              userId: userId,
+              platform: 'whatsapp',
+              messageType: 'bot_response'
+            },
+            attributes: [
+              [fn('SUM', col('count')), 'botResponses']
+            ],
+            raw: true
+          });
+          return result;
+        } catch (error) {
+          // Fallback to all messages if messageType column doesn't exist
+          console.log('[Billing] messageType column not found, using all messages for WhatsApp');
+          return await MessageUsage.findAll({
+            where: { 
+              userId: userId,
+              platform: 'whatsapp'
+            },
+            attributes: [
+              [fn('SUM', col('count')), 'botResponses']
+            ],
+            raw: true
+          });
+        }
+      })(),
       
-      // Telegram statistics - Only count bot responses for billing
-      MessageUsage.findAll({
-        where: { 
-          userId: userId,
-          platform: 'telegram',
-          messageType: 'bot_response'
-        },
-        attributes: [
-          [fn('SUM', col('count')), 'botResponses']
-        ],
-        raw: true
-      })
+      // Telegram statistics - Try to count bot responses, fallback to all messages
+      (async () => {
+        try {
+          const result = await MessageUsage.findAll({
+            where: { 
+              userId: userId,
+              platform: 'telegram',
+              messageType: 'bot_response'
+            },
+            attributes: [
+              [fn('SUM', col('count')), 'botResponses']
+            ],
+            raw: true
+          });
+          return result;
+        } catch (error) {
+          // Fallback to all messages if messageType column doesn't exist
+          console.log('[Billing] messageType column not found, using all messages for Telegram');
+          return await MessageUsage.findAll({
+            where: { 
+              userId: userId,
+              platform: 'telegram'
+            },
+            attributes: [
+              [fn('SUM', col('count')), 'botResponses']
+            ],
+            raw: true
+          });
+        }
+      })()
     ]);
 
     // Calculate growth rate (simplified)

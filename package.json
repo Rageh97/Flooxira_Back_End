@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "nodemon --ext js,json --watch src src/server.js",
     "start": "node src/server.js",
-    "migrate": "node run-migration.js"
+    "migrate": "node run-migration.js",
+    "fix-message-usage": "node fix-message-usage-table.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

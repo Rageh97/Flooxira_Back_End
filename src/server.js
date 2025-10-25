@@ -404,6 +404,22 @@ async function start() {
     console.error('❌ Failed to start scheduler:', schedulerError.message);
   }
   
+  // Run database migrations on startup
+  try {
+    console.log('🔧 Running database migrations...');
+    const { exec } = require('child_process');
+    exec('node fix-message-usage-table.js', (error, stdout, stderr) => {
+      if (error) {
+        console.error('❌ Migration failed:', error.message);
+      } else {
+        console.log('✅ Database migrations completed');
+        console.log(stdout);
+      }
+    });
+  } catch (migrationError) {
+    console.error('❌ Failed to run migrations:', migrationError.message);
+  }
+  
   // Clean old conversations every 24 hours
   setInterval(async () => {
     try {
