@@ -17,12 +17,9 @@ const Post = sequelize.define('Post', {
     }
   },
   type: {
-    type: DataTypes.STRING,
+    type: DataTypes.ENUM('text', 'link', 'photo', 'video'),
     allowNull: false,
-    defaultValue: 'text',
-    validate: {
-      isIn: [['text', 'link', 'photo', 'video']]
-    }
+    defaultValue: 'text'
   },
   content: {
     type: DataTypes.TEXT,
@@ -45,24 +42,18 @@ const Post = sequelize.define('Post', {
     allowNull: true
   },
   format: {
-    type: DataTypes.STRING,
+    type: DataTypes.ENUM('feed', 'reel', 'story'),
     allowNull: false,
-    defaultValue: 'feed',
-    validate: {
-      isIn: [['feed', 'reel', 'story']]
-    }
+    defaultValue: 'feed'
   },
   scheduledAt: {
     type: DataTypes.DATE,
     allowNull: true
   },
   status: {
-    type: DataTypes.STRING,
+    type: DataTypes.ENUM('draft', 'scheduled', 'published', 'failed'),
     allowNull: false,
-    defaultValue: 'draft',
-    validate: {
-      isIn: [['draft', 'scheduled', 'published', 'failed']]
-    }
+    defaultValue: 'draft'
   },
   fbPostId: {
     type: DataTypes.STRING,

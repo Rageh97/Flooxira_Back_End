@@ -17,12 +17,9 @@ const Plan = sequelize.define('Plan', {
     defaultValue: 0
   },
   interval: {
-    type: DataTypes.STRING,
+    type: DataTypes.ENUM('monthly', 'yearly'),
     allowNull: false,
-    defaultValue: 'monthly',
-    validate: {
-      isIn: [['monthly', 'yearly']]
-    }
+    defaultValue: 'monthly'
   },
   features: {
     type: DataTypes.JSON,

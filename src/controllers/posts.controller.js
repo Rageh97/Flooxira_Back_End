@@ -1,6 +1,5 @@
 const { Post } = require('../models/post');
 const { tryPublishNow } = require('../scheduler');
-const limitService = require('../services/limitService');
 
 async function listPosts(req, res) {
   const where = { userId: req.userId };
@@ -118,15 +117,6 @@ async function createPost(req, res) {
         post.status = 'published';
         post.error = null;
         await post.save();
-        
-        // Record post usage for each platform
-        for (const platform of platforms) {
-          await limitService.recordPostUsage(req.userId, platform, 'published', 1, {
-            postId: post.id,
-            type: post.type,
-            format: post.format
-          });
-        }
       } else {
         console.log('❌ Post failed to publish to any platform');
         post.status = 'failed';
@@ -142,16 +132,6 @@ async function createPost(req, res) {
   } else {
     console.log('📅 Post scheduled for:', finalScheduledAt);
     console.log('⏰ Post will be published automatically at the scheduled time');
-    
-    // Record post usage for scheduled posts
-    for (const platform of platforms) {
-      await limitService.recordPostUsage(req.userId, platform, 'scheduled', 1, {
-        postId: post.id,
-        type: post.type,
-        format: post.format,
-        scheduledAt: finalScheduledAt
-      });
-    }
   }
   
   return res.status(201).json({ post });
@@ -230,54 +210,4 @@ async function stats(req, res) {
   });
 }
 
-async function getPostUsageStats(req, res) {
-  try {
-    const userId = req.userId;
-    const limitService = require('../services/limitService');
-    
-    // Get user limits
-    const limits = await limitService.getUserLimits(userId);
-    
-    // Get total usage across all platforms for current month
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
-    
-    // Get usage for each platform
-    const platforms = limits.platforms || ['facebook', 'instagram', 'twitter', 'linkedin', 'pinterest', 'tiktok', 'youtube'];
-    const platformUsage = {};
-    let totalUsed = 0;
-    
-    for (const platform of platforms) {
-      const usage = await limitService.getPostUsage(userId, platform, currentMonth, currentYear);
-      platformUsage[platform] = usage;
-      totalUsed += usage;
-    }
-    
-    const monthlyLimit = limits.monthlyPosts || 0;
-    const remaining = Math.max(0, monthlyLimit - totalUsed);
-    const percentage = monthlyLimit > 0 ? Math.round((totalUsed / monthlyLimit) * 100) : 0;
-    
-    res.json({
-      success: true,
-      data: {
-        monthlyLimit,
-        totalUsed,
-        remaining,
-        percentage,
-        isNearLimit: percentage >= 80,
-        isAtLimit: percentage >= 100,
-        platformUsage,
-        planName: limits.planName
-      }
-    });
-  } catch (error) {
-    console.error('Error getting post usage stats:', error);
-    res.status(500).json({
-      success: false,
-      message: 'خطأ في جلب إحصائيات المنشورات'
-    });
-  }
-}
-
-module.exports = { listPosts, createPost, updatePost, deletePost, stats, getPostUsageStats };
+module.exports = { listPosts, createPost, updatePost, deletePost, stats };
