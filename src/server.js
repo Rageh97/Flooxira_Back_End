@@ -404,25 +404,6 @@ async function start() {
     console.error('❌ Failed to start scheduler:', schedulerError.message);
   }
   
-  // Run database migrations on startup
-  try {
-    console.log('🔧 Running database migrations...');
-    const { exec } = require('child_process');
-    exec('node simple-migration.js', { cwd: __dirname }, (error, stdout, stderr) => {
-      if (error) {
-        console.error('❌ Migration failed:', error.message);
-        console.error('Migration stderr:', stderr);
-        // Don't exit the server, just log the error
-      } else {
-        console.log('✅ Database migrations completed');
-        if (stdout) console.log(stdout);
-      }
-    });
-  } catch (migrationError) {
-    console.error('❌ Failed to run migrations:', migrationError.message);
-    // Don't exit the server, just log the error
-  }
-  
   // Clean old conversations every 24 hours
   setInterval(async () => {
     try {

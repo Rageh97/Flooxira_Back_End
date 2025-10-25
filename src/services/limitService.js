@@ -2,7 +2,6 @@ const { User } = require('../models/user');
 const { UserSubscription } = require('../models/userSubscription');
 const { Plan } = require('../models/plan');
 const { MessageUsage } = require('../models/messageUsage');
-const { PostUsage } = require('../models/postUsage');
 const { Op } = require('sequelize');
 
 class LimitService {
@@ -37,13 +36,11 @@ class LimitService {
 
       if (!subscription || !subscription.plan) {
         return {
-        canManageWhatsApp: false,
-        canManageTelegram: false,
-        whatsappMessagesPerMonth: 0,
-        telegramMessagesPerMonth: 0,
-        monthlyPosts: 0,
-        platforms: [],
-        planName: 'No Plan'
+          canManageWhatsApp: false,
+          canManageTelegram: false,
+          whatsappMessagesPerMonth: 0,
+          telegramMessagesPerMonth: 0,
+          planName: 'No Plan'
         };
       }
 
@@ -52,8 +49,6 @@ class LimitService {
         canManageTelegram: subscription.plan.permissions?.canManageTelegram || false,
         whatsappMessagesPerMonth: subscription.plan.permissions?.whatsappMessagesPerMonth || 0,
         telegramMessagesPerMonth: subscription.plan.permissions?.telegramMessagesPerMonth || 0,
-        monthlyPosts: subscription.plan.permissions?.monthlyPosts || 0,
-        platforms: subscription.plan.permissions?.platforms || [],
         planName: subscription.plan.name,
         expiresAt: subscription.expiresAt
       };
@@ -72,8 +67,6 @@ class LimitService {
         canManageTelegram: false,
         whatsappMessagesPerMonth: 0,
         telegramMessagesPerMonth: 0,
-        monthlyPosts: 0,
-        platforms: [],
         planName: 'Error'
       };
     }
@@ -97,33 +90,16 @@ class LimitService {
         }
       }
 
-      // Get all bot response usage records for this month
-      let usageRecords;
-      try {
-        usageRecords = await MessageUsage.findAll({
-          where: {
-            userId,
-            platform,
-            month: currentMonth,
-            year: currentYear,
-            messageType: 'bot_response' // Only count bot responses for billing
-          }
-        });
-      } catch (error) {
-        // Fallback to all messages if messageType column doesn't exist
-        console.log(`[LimitService] messageType column not found for ${platform}, using all messages`);
-        usageRecords = await MessageUsage.findAll({
-          where: {
-            userId,
-            platform,
-            month: currentMonth,
-            year: currentYear
-          }
-        });
-      }
+      const usage = await MessageUsage.findOne({
+        where: {
+          userId,
+          platform,
+          month: currentMonth,
+          year: currentYear
+        }
+      });
 
-      // Sum all bot response counts
-      const totalUsage = usageRecords.reduce((sum, record) => sum + record.count, 0);
+      const totalUsage = usage ? usage.count : 0;
 
       // Cache the result
       this.userUsage.set(cacheKey, {
@@ -174,30 +150,15 @@ class LimitService {
       const month = now.getMonth() + 1;
       const year = now.getFullYear();
 
-      // Find existing usage record for this specific message type
-      let usage;
-      try {
-        usage = await MessageUsage.findOne({
-          where: {
-            userId,
-            platform,
-            month,
-            year,
-            messageType
-          }
-        });
-      } catch (error) {
-        // Fallback if messageType column doesn't exist
-        console.log(`[LimitService] messageType column not found, using default messageType for ${platform}`);
-        usage = await MessageUsage.findOne({
-          where: {
-            userId,
-            platform,
-            month,
-            year
-          }
-        });
-      }
+      // Find existing usage record
+      let usage = await MessageUsage.findOne({
+        where: {
+          userId,
+          platform,
+          month,
+          year
+        }
+      });
 
       if (usage) {
         // Update existing record
@@ -205,28 +166,15 @@ class LimitService {
         await usage.save();
       } else {
         // Create new record
-        try {
-          usage = await MessageUsage.create({
-            userId,
-            platform,
-            messageType,
-            count,
-            month,
-            year,
-            metadata
-          });
-        } catch (error) {
-          // Fallback if messageType column doesn't exist
-          console.log(`[LimitService] messageType column not found, creating record without messageType for ${platform}`);
-          usage = await MessageUsage.create({
-            userId,
-            platform,
-            count,
-            month,
-            year,
-            metadata
-          });
-        }
+        usage = await MessageUsage.create({
+          userId,
+          platform,
+          messageType,
+          count,
+          month,
+          year,
+          metadata
+        });
       }
 
       // Clear cache
@@ -268,161 +216,6 @@ class LimitService {
         isNearLimit: false,
         isAtLimit: true,
         canSend: false
-      };
-    }
-  }
-
-  // Get user's current post usage for a platform
-  async getPostUsage(userId, platform, month = null, year = null) {
-    try {
-      const now = new Date();
-      const currentMonth = month || now.getMonth() + 1;
-      const currentYear = year || now.getFullYear();
-
-      const cacheKey = `posts_${userId}_${platform}_${currentMonth}_${currentYear}`;
-      
-      // Check cache first
-      if (this.userUsage.has(cacheKey)) {
-        const cached = this.userUsage.get(cacheKey);
-        // Cache for 1 minute
-        if (Date.now() - cached.timestamp < 60 * 1000) {
-          return cached.data;
-        }
-      }
-
-      // Get all post usage records for this month
-      const usageRecords = await PostUsage.findAll({
-        where: {
-          userId,
-          platform,
-          month: currentMonth,
-          year: currentYear
-        }
-      });
-
-      // Sum all post counts
-      const totalUsage = usageRecords.reduce((sum, record) => sum + record.count, 0);
-
-      // Cache the result
-      this.userUsage.set(cacheKey, {
-        data: totalUsage,
-        timestamp: Date.now()
-      });
-
-      return totalUsage;
-    } catch (error) {
-      console.error('Error getting post usage:', error);
-      return 0;
-    }
-  }
-
-  // Check if user can create posts
-  async canCreatePost(userId, platform) {
-    try {
-      const limits = await this.getUserLimits(userId);
-      
-      // Check if platform is allowed
-      if (limits.platforms && limits.platforms.length > 0 && !limits.platforms.includes(platform)) {
-        return { canCreate: false, reason: `Platform ${platform} not allowed in your plan` };
-      }
-
-      // Check monthly post limit
-      if (limits.monthlyPosts === 0) {
-        return { canCreate: false, reason: 'Post creation not allowed in your plan' };
-      }
-
-      // If unlimited (-1), allow all posts
-      if (limits.monthlyPosts === -1) {
-        return { canCreate: true };
-      }
-
-      // Check current usage
-      const usage = await this.getPostUsage(userId, platform);
-      if (usage >= limits.monthlyPosts) {
-        return { canCreate: false, reason: 'Monthly post limit reached' };
-      }
-
-      return { canCreate: true };
-    } catch (error) {
-      console.error('Error checking post limit:', error);
-      return { canCreate: false, reason: 'Error checking limits' };
-    }
-  }
-
-  // Record post usage
-  async recordPostUsage(userId, platform, postType = 'published', count = 1, metadata = {}) {
-    try {
-      const now = new Date();
-      const month = now.getMonth() + 1;
-      const year = now.getFullYear();
-
-      // Find existing usage record for this platform and post type
-      let usage = await PostUsage.findOne({
-        where: {
-          userId,
-          platform,
-          month,
-          year,
-          postType
-        }
-      });
-
-      if (usage) {
-        // Update existing record
-        usage.count += count;
-        await usage.save();
-      } else {
-        // Create new record
-        usage = await PostUsage.create({
-          userId,
-          platform,
-          postType,
-          count,
-          month,
-          year,
-          metadata
-        });
-      }
-
-      // Clear cache
-      const cacheKey = `posts_${userId}_${platform}_${month}_${year}`;
-      this.userUsage.delete(cacheKey);
-
-      return usage;
-    } catch (error) {
-      console.error('Error recording post usage:', error);
-    }
-  }
-
-  // Get post usage statistics
-  async getPostUsageStats(userId, platform) {
-    try {
-      const limits = await this.getUserLimits(userId);
-      const usage = await this.getPostUsage(userId, platform);
-
-      const limit = limits.monthlyPosts;
-      const percentage = limit > 0 ? (usage / limit) * 100 : 0;
-      const remaining = Math.max(0, limit - usage);
-
-      return {
-        used: usage,
-        limit: limit,
-        remaining: remaining,
-        percentage: Math.round(percentage),
-        isNearLimit: percentage >= 80,
-        isAtLimit: percentage >= 100,
-        canCreate: usage < limit
-      };
-    } catch (error) {
-      console.error('Error getting post usage stats:', error);
-      return {
-        used: 0,
-        limit: 0,
-        remaining: 0,
-        percentage: 0,
-        isNearLimit: false,
-        isAtLimit: true,
-        canCreate: false
       };
     }
   }
