@@ -32,9 +32,12 @@ const UserSubscription = sequelize.define('UserSubscription', {
     }
   },
   status: {
-    type: DataTypes.ENUM('active', 'expired', 'cancelled'),
+    type: DataTypes.STRING,
     allowNull: false,
-    defaultValue: 'active'
+    defaultValue: 'active',
+    validate: {
+      isIn: [['active', 'expired', 'cancelled']]
+    }
   },
   startedAt: {
     type: DataTypes.DATE,
@@ -56,8 +59,11 @@ const UserSubscription = sequelize.define('UserSubscription', {
     allowNull: true
   },
   discountType: {
-    type: DataTypes.ENUM('percentage', 'fixed', 'bonus_days'),
-    allowNull: true
+    type: DataTypes.STRING,
+    allowNull: true,
+    validate: {
+      isIn: [['percentage', 'fixed', 'bonus_days']]
+    }
   },
   discountValue: {
     type: DataTypes.DECIMAL(10, 2),

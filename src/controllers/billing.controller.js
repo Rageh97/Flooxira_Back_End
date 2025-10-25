@@ -209,10 +209,14 @@ async function getBillingAnalytics(req, res) {
     });
   } catch (error) {
     console.error('Get billing analytics error:', error);
+    console.error('Error stack:', error.stack);
+    
+    // Return a more detailed error response for debugging
     return res.status(500).json({ 
       success: false, 
       message: 'Failed to get billing analytics',
-      error: error.message 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }

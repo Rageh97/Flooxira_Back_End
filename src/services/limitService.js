@@ -62,6 +62,7 @@ class LimitService {
       return limits;
     } catch (error) {
       console.error('Error getting user limits:', error);
+      console.error('Error stack:', error.stack);
       return {
         canManageWhatsApp: false,
         canManageTelegram: false,
@@ -110,6 +111,7 @@ class LimitService {
       return totalUsage;
     } catch (error) {
       console.error('Error getting user usage:', error);
+      console.error('Error stack:', error.stack);
       return 0;
     }
   }

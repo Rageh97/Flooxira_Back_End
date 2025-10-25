@@ -16,13 +16,19 @@ const PostUsage = sequelize.define('PostUsage', {
     }
   },
   platform: {
-    type: DataTypes.ENUM('facebook', 'instagram', 'twitter', 'linkedin', 'pinterest', 'tiktok', 'youtube'),
-    allowNull: false
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      isIn: [['facebook', 'instagram', 'twitter', 'linkedin', 'pinterest', 'tiktok', 'youtube']]
+    }
   },
   postType: {
-    type: DataTypes.ENUM('published', 'scheduled'),
+    type: DataTypes.STRING,
     allowNull: false,
-    defaultValue: 'published'
+    defaultValue: 'published',
+    validate: {
+      isIn: [['published', 'scheduled']]
+    }
   },
   count: {
     type: DataTypes.INTEGER,

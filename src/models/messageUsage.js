@@ -16,12 +16,18 @@ const MessageUsage = sequelize.define('MessageUsage', {
     }
   },
   platform: {
-    type: DataTypes.ENUM('whatsapp', 'telegram'),
-    allowNull: false
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      isIn: [['whatsapp', 'telegram']]
+    }
   },
   messageType: {
-    type: DataTypes.ENUM('outgoing', 'campaign', 'template', 'bot_response'),
-    allowNull: false
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      isIn: [['outgoing', 'campaign', 'template', 'bot_response']]
+    }
   },
   count: {
     type: DataTypes.INTEGER,

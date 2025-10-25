@@ -8,7 +8,14 @@ const User = sequelize.define('User', {
   phone: { type: DataTypes.STRING(20), allowNull: true },
   passwordHash: { type: DataTypes.STRING(255), allowNull: false },
   emailVerifiedAt: { type: DataTypes.DATE, allowNull: true },
-  role: { type: DataTypes.ENUM('user', 'admin'), allowNull: false, defaultValue: 'user' },
+  role: { 
+    type: DataTypes.STRING, 
+    allowNull: false, 
+    defaultValue: 'user',
+    validate: {
+      isIn: [['user', 'admin']]
+    }
+  },
   isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   botPaused: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   botPausedUntil: { type: DataTypes.DATE, allowNull: true },
