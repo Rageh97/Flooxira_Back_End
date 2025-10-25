@@ -10,7 +10,7 @@ async function addMessageTypeColumn() {
       PRAGMA table_info(message_usage);
     `);
     
-    const hasMessageType = results.some((col: any) => col.name === 'messageType');
+    const hasMessageType = results.some((col) => col.name === 'messageType');
     
     if (hasMessageType) {
       console.log('✅ messageType column already exists!');

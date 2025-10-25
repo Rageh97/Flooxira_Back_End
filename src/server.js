@@ -408,16 +408,19 @@ async function start() {
   try {
     console.log('🔧 Running database migrations...');
     const { exec } = require('child_process');
-    exec('node fix-message-usage-table.js', (error, stdout, stderr) => {
+    exec('node simple-migration.js', { cwd: __dirname }, (error, stdout, stderr) => {
       if (error) {
         console.error('❌ Migration failed:', error.message);
+        console.error('Migration stderr:', stderr);
+        // Don't exit the server, just log the error
       } else {
         console.log('✅ Database migrations completed');
-        console.log(stdout);
+        if (stdout) console.log(stdout);
       }
     });
   } catch (migrationError) {
     console.error('❌ Failed to run migrations:', migrationError.message);
+    // Don't exit the server, just log the error
   }
   
   // Clean old conversations every 24 hours

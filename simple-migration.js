@@ -1,11 +1,11 @@
 require('dotenv').config();
 const { sequelize } = require('./src/sequelize');
 
-async function fixMessageUsageTable() {
+async function runSimpleMigration() {
   try {
-    console.log('🔧 Fixing message_usage table...');
+    console.log('🔧 Running simple migration...');
     
-    // Check if table exists
+    // Check if message_usage table exists
     const [tables] = await sequelize.query(`
       SELECT name FROM sqlite_master WHERE type='table' AND name='message_usage';
     `);
@@ -34,36 +34,19 @@ async function fixMessageUsageTable() {
       `);
       
       console.log('✅ messageType column added successfully!');
-      
-      // Update existing records to have 'bot_response' type
-      console.log('🔄 Updating existing records...');
-      await sequelize.query(`
-        UPDATE message_usage 
-        SET messageType = 'bot_response' 
-        WHERE messageType = 'outgoing'
-      `);
-      
-      console.log('✅ Existing records updated!');
     }
     
-    // Verify the fix
-    const [updatedColumns] = await sequelize.query(`
-      PRAGMA table_info(message_usage);
-    `);
-    
-    console.log('📋 Current message_usage table structure:');
-    updatedColumns.forEach((col) => {
-      console.log(`  - ${col.name}: ${col.type} ${col.notnull ? 'NOT NULL' : 'NULL'}`);
-    });
-    
-    console.log('🎉 message_usage table fixed successfully!');
+    console.log('🎉 Migration completed successfully!');
     
   } catch (error) {
-    console.error('❌ Error fixing message_usage table:', error.message);
-    process.exit(1);
+    if (error.message.includes('duplicate column name') || error.message.includes('already exists')) {
+      console.log('✅ messageType column already exists!');
+    } else {
+      console.error('❌ Migration error:', error.message);
+    }
   } finally {
     await sequelize.close();
   }
 }
 
-fixMessageUsageTable();
+runSimpleMigration();
