@@ -797,6 +797,29 @@ async function startCampaign(req, res) {
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = xlsx.utils.sheet_to_json(ws);
 
+    // التحقق من القيود
+    const throttleMinutes = parseInt(throttleMs) / (1000 * 60); // تحويل من milliseconds إلى دقائق
+    if (throttleMinutes < 5) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'الحد الأدنى للدقائق بين الرسائل هو 5 دقائق' 
+      });
+    }
+
+    if (rows.length > 500) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'الحد الأقصى للأرقام في الحملة هو 500 رقم' 
+      });
+    }
+
+    if (dailyCap && parseInt(dailyCap) > 500) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'الحد الأقصى للأرقام في اليوم هو 500 رقم' 
+      });
+    }
+
     const now = Date.now();
     let scheduledDate = null;
     if (scheduleAt) {
