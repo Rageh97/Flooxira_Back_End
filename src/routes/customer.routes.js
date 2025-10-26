@@ -21,7 +21,7 @@ router.post('/', requireCustomerManagementAccess, customerUpload.single('invoice
 router.get('/', requireCustomerManagementAccess, customerController.getCustomers);
 router.get('/stats', requireCustomerManagementAccess, customerController.getCustomerStats);
 router.get('/:id', requireCustomerManagementAccess, customerController.getCustomer);
-router.put('/:id', requireCustomerManagementAccess, customerController.updateCustomer);
+router.put('/:id', requireCustomerManagementAccess, customerUpload.single('invoiceImage'), customerController.updateCustomer);
 router.delete('/:id', requireCustomerManagementAccess, customerController.deleteCustomer);
 
 // Routes للتفاعلات

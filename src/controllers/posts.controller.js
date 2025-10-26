@@ -210,4 +210,50 @@ async function stats(req, res) {
   });
 }
 
-module.exports = { listPosts, createPost, updatePost, deletePost, stats };
+async function getPostUsageStats(req, res) {
+  try {
+    const userId = req.userId;
+    const { Op } = require('sequelize');
+    
+    // Get post usage statistics
+    const totalPosts = await Post.count({ where: { userId } });
+    const publishedPosts = await Post.count({ where: { userId, status: 'published' } });
+    const scheduledPosts = await Post.count({ where: { userId, status: 'scheduled' } });
+    const draftPosts = await Post.count({ where: { userId, status: 'draft' } });
+    const failedPosts = await Post.count({ where: { userId, status: 'failed' } });
+    
+    // Get platform-specific usage
+    const platformStats = await Post.findAll({
+      where: { userId },
+      attributes: [
+        'platforms',
+        [require('sequelize').fn('COUNT', require('sequelize').col('id')), 'count']
+      ],
+      group: ['platforms'],
+      raw: true
+    });
+    
+    // Calculate usage percentages
+    const usageStats = {
+      total: totalPosts,
+      published: publishedPosts,
+      scheduled: scheduledPosts,
+      draft: draftPosts,
+      failed: failedPosts,
+      platforms: platformStats.reduce((acc, stat) => {
+        const platforms = JSON.parse(stat.platforms || '[]');
+        platforms.forEach(platform => {
+          acc[platform] = (acc[platform] || 0) + parseInt(stat.count);
+        });
+        return acc;
+      }, {})
+    };
+    
+    return res.json({ success: true, stats: usageStats });
+  } catch (error) {
+    console.error('Error getting post usage stats:', error);
+    return res.status(500).json({ success: false, message: 'Failed to get usage stats', error: error.message });
+  }
+}
+
+module.exports = { listPosts, createPost, updatePost, deletePost, stats, getPostUsageStats };

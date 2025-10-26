@@ -285,8 +285,7 @@ async function employeeLogin(req, res) {
     const { email, password } = req.body;
 
     const employee = await Employee.findOne({
-      where: { email, isActive: true },
-      include: [{ model: User, as: 'owner' }]
+      where: { email, isActive: true }
     });
 
     if (!employee) {
@@ -329,11 +328,7 @@ async function employeeLogin(req, res) {
         email: employee.email,
         name: employee.name,
         permissions: employee.permissions,
-        owner: {
-          id: employee.owner.id,
-          name: employee.owner.name,
-          email: employee.owner.email
-        }
+        ownerId: employee.ownerId
       }
     });
 

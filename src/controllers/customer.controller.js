@@ -68,7 +68,7 @@ async function createCustomer(req, res) {
     // Handle invoice image
     let invoiceImagePath = null;
     if (req.file) {
-      const baseUrl = process.env.API_URL || `http://localhost:${process.env.PORT || 4000}`;
+      const baseUrl = process.env.API_URL || `https://api.flooxira.com`;
       invoiceImagePath = `${baseUrl}/uploads/customers/${req.file.filename}`;
       console.log('Invoice image saved:', invoiceImagePath);
       console.log('Base URL:', baseUrl);
@@ -466,6 +466,12 @@ async function updateCustomer(req, res) {
       
       updateData.categoryId = category.id;
       delete updateData.categoryName;
+    }
+
+    // Handle invoice image update
+    if (req.file) {
+      const baseUrl = process.env.API_URL || `https://api.flooxira.com`;
+      updateData.invoiceImage = `${baseUrl}/uploads/customers/${req.file.filename}`;
     }
 
     await customer.update(updateData);
