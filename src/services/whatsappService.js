@@ -456,6 +456,10 @@ class WhatsAppService {
   handleDisconnection(userId, reason) {
     this.userClients.delete(userId);
     this.qrCodes.delete(userId);
+    
+    // Clean up conversation locks and message times for this user
+    this.cleanupUserConversations(userId);
+    
     const s = this.userStates.get(userId) || {};
     s.initializing = false;
     s.ready = false;
@@ -520,9 +524,17 @@ class WhatsAppService {
   }
 
   async handleIncomingMessage(message, userId) {
+    let conversationKey = null;
+    
     try {
+      // Validate input parameters
+      if (!message || !userId || !message.from) {
+        console.log('[WA] Invalid message or userId, skipping processing');
+        return;
+      }
+      
       // Create a unique conversation key
-      const conversationKey = `${userId}_${message.from}`;
+      conversationKey = `${userId}_${message.from}`;
       const now = Date.now();
       
       // Check if we're already processing a message for this conversation
@@ -825,15 +837,22 @@ class WhatsAppService {
     } catch (error) {
       console.error('Message handling error:', error);
     } finally {
-      // Always release the conversation lock
-      this.conversationLocks.delete(conversationKey);
+      // Always release the conversation lock if it exists
+      if (conversationKey) {
+        this.conversationLocks.delete(conversationKey);
+      }
       
       // Clean up old message times (older than 1 hour)
-      const oneHourAgo = Date.now() - (60 * 60 * 1000);
-      for (const [key, time] of this.lastMessageTime.entries()) {
-        if (time < oneHourAgo) {
-          this.lastMessageTime.delete(key);
+      try {
+        const oneHourAgo = Date.now() - (60 * 60 * 1000);
+        for (const [key, time] of this.lastMessageTime.entries()) {
+          if (time < oneHourAgo) {
+            this.lastMessageTime.delete(key);
+          }
         }
+      } catch (cleanupError) {
+        // Silently ignore cleanup errors
+        console.log('[WA] Cleanup error (ignored):', cleanupError.message);
       }
     }
   }
@@ -1127,6 +1146,33 @@ class WhatsAppService {
     return this.qrCodes.get(userId) || null;
   }
 
+  // Clean up conversation locks and message times for a specific user
+  cleanupUserConversations(userId) {
+    try {
+      // Clean up conversation locks for this user
+      const locksToDelete = [];
+      for (const [key, value] of this.conversationLocks.entries()) {
+        if (key.startsWith(`${userId}_`)) {
+          locksToDelete.push(key);
+        }
+      }
+      locksToDelete.forEach(key => this.conversationLocks.delete(key));
+      
+      // Clean up message times for this user
+      const timesToDelete = [];
+      for (const [key, value] of this.lastMessageTime.entries()) {
+        if (key.startsWith(`${userId}_`)) {
+          timesToDelete.push(key);
+        }
+      }
+      timesToDelete.forEach(key => this.lastMessageTime.delete(key));
+      
+      console.log(`[WA] Cleaned up ${locksToDelete.length} conversation locks and ${timesToDelete.length} message times for user ${userId}`);
+    } catch (error) {
+      console.error('Error cleaning up user conversations:', error);
+    }
+  }
+
   async stopSession(userId) {
     try {
       // Mark as explicitly stopped to prevent auto-reconnect
@@ -1143,6 +1189,9 @@ class WhatsAppService {
       
       this.userClients.delete(userId);
       this.qrCodes.delete(userId);
+      
+      // Clean up conversation locks and message times for this user
+      this.cleanupUserConversations(userId);
       
       const s = this.userStates.get(userId) || {};
       s.initializing = false;

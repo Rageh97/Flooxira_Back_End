@@ -12,15 +12,19 @@ const router = Router();
 
 router.use(requireAuth);
 router.use(requireActiveSubscription);
-router.use(requireContentManagement);
 
+// Routes that require content management
+router.use(requireContentManagement);
 router.get('/test', (_req, res) => res.json({ ok: true }));
 router.get('/', ctrl.listPosts);
-router.get('/usage-stats', ctrl.getPostUsageStats);
 router.post('/', checkMonthlyPostsLimit, ctrl.createPost);
 router.put('/:id', ctrl.updatePost);
 router.delete('/:id', ctrl.deletePost);
 router.get('/stats', ctrl.stats);
+
+// Routes that don't require content management (just viewing stats)
+// Remove requireContentManagement for usage-stats
+router.get('/usage-stats', ctrl.getPostUsageStats);
 
 module.exports = router;
 

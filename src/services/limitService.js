@@ -93,16 +93,37 @@ class LimitService {
         }
       }
 
+      // For WhatsApp, only count bot responses, not all messages
+      let whereClause = {
+        userId,
+        platform,
+        month: currentMonth,
+        year: currentYear
+      };
+
+      if (platform === 'whatsapp') {
+        // Only count bot responses for WhatsApp
+        whereClause.messageType = 'bot_response';
+      }
+
       const usage = await MessageUsage.findOne({
-        where: {
-          userId,
-          platform,
-          month: currentMonth,
-          year: currentYear
-        }
+        where: whereClause
       });
 
       const totalUsage = usage ? usage.count : 0;
+
+      console.log(`[Limit Service] ${platform} usage for user ${userId}: ${totalUsage} (${platform === 'whatsapp' ? 'bot responses only' : 'all messages'})`);
+      
+      // Log the query details for debugging
+      if (platform === 'whatsapp') {
+        console.log(`[Limit Service] WhatsApp query:`, {
+          userId,
+          platform,
+          messageType: 'bot_response',
+          month: currentMonth,
+          year: currentYear
+        });
+      }
 
       // Cache the result
       this.userUsage.set(cacheKey, {
