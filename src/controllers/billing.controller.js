@@ -69,16 +69,29 @@ async function getBillingAnalytics(req, res) {
       .reduce((sum, sub) => sum + (sub.plan ? sub.plan.priceCents : 0), 0);
 
     // Get user limits and usage from limitService
-    const limits = await limitService.getUserLimits(userId);
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
-    
-    console.log(`[Billing] User ${userId} limits:`, limits);
-    
-    const [whatsappUsage, telegramUsage] = await Promise.all([
-      limitService.getUserUsage(userId, 'whatsapp', currentMonth, currentYear),
-      limitService.getUserUsage(userId, 'telegram', currentMonth, currentYear)
-    ]);
+    let limits, whatsappUsage, telegramUsage;
+    try {
+      limits = await limitService.getUserLimits(userId);
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+      
+      console.log(`[Billing] User ${userId} limits:`, limits);
+      
+      [whatsappUsage, telegramUsage] = await Promise.all([
+        limitService.getUserUsage(userId, 'whatsapp', currentMonth, currentYear),
+        limitService.getUserUsage(userId, 'telegram', currentMonth, currentYear)
+      ]);
+    } catch (limitError) {
+      console.error('Error getting user limits:', limitError);
+      // Set default limits if service fails
+      limits = {
+        whatsappMessagesPerMonth: 0,
+        telegramMessagesPerMonth: 0,
+        monthlyPosts: 0
+      };
+      whatsappUsage = 0;
+      telegramUsage = 0;
+    }
     
     console.log(`[Billing] WhatsApp usage for ${userId}: ${whatsappUsage}/${limits.whatsappMessagesPerMonth}`);
     console.log(`[Billing] Telegram usage for ${userId}: ${telegramUsage}/${limits.telegramMessagesPerMonth}`);

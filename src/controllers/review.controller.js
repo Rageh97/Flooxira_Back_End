@@ -15,7 +15,8 @@ async function getAllReviews(req, res) {
         {
           model: User,
           as: 'user',
-          attributes: ['id', 'name', 'email']
+          attributes: ['id', 'name', 'email'],
+          required: false
         }
       ],
       order: [['createdAt', 'DESC']],
@@ -180,26 +181,54 @@ async function deleteReview(req, res) {
 // Get review statistics
 async function getReviewStats(req, res) {
   try {
-    const stats = await Review.findAll({
+    const totalReviews = await Review.count();
+    const approvedReviews = await Review.count({ where: { status: 'approved' } });
+    const pendingReviews = await Review.count({ where: { status: 'pending' } });
+    const rejectedReviews = await Review.count({ where: { status: 'rejected' } });
+
+    // Calculate average rating
+    const avgRatingResult = await Review.findOne({
       where: { status: 'approved' },
       attributes: [
-        [sequelize.fn('COUNT', sequelize.col('id')), 'totalReviews'],
-        [sequelize.fn('AVG', sequelize.col('rating')), 'averageRating'],
-        [sequelize.fn('COUNT', sequelize.literal('CASE WHEN rating = 5 THEN 1 END')), 'fiveStars'],
-        [sequelize.fn('COUNT', sequelize.literal('CASE WHEN rating = 4 THEN 1 END')), 'fourStars'],
-        [sequelize.fn('COUNT', sequelize.literal('CASE WHEN rating = 3 THEN 1 END')), 'threeStars'],
-        [sequelize.fn('COUNT', sequelize.literal('CASE WHEN rating = 2 THEN 1 END')), 'twoStars'],
-        [sequelize.fn('COUNT', sequelize.literal('CASE WHEN rating = 1 THEN 1 END')), 'oneStar']
+        [sequelize.fn('AVG', sequelize.col('rating')), 'avgRating']
       ],
       raw: true
     });
 
-    res.json({ success: true, stats: stats[0] });
+    const avgRating = avgRatingResult?.avgRating ? parseFloat(avgRatingResult.avgRating).toFixed(1) : 0;
+
+    // Get rating distribution
+    const ratingDistribution = await Review.findAll({
+      where: { status: 'approved' },
+      attributes: [
+        'rating',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      group: ['rating'],
+      order: [['rating', 'ASC']],
+      raw: true
+    });
+
+    res.json({
+      success: true,
+      stats: {
+        total: totalReviews,
+        approved: approvedReviews,
+        pending: pendingReviews,
+        rejected: rejectedReviews,
+        averageRating: avgRating,
+        ratingDistribution: ratingDistribution.reduce((acc, item) => {
+          acc[item.rating] = parseInt(item.count);
+          return acc;
+        }, {})
+      }
+    });
   } catch (e) {
     console.error('Error fetching review stats:', e);
     res.status(500).json({ success: false, message: 'Failed to fetch review stats', error: e.message });
   }
 }
+
 
 // Update review status (admin only)
 async function updateReviewStatus(req, res) {
