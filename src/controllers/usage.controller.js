@@ -13,8 +13,16 @@ async function getUsageStats(req, res) {
       });
     }
 
-    const stats = await limitService.getUsageStats(userId, platform);
-    const limits = await limitService.getUserLimits(userId);
+    let stats, limits;
+    try {
+      stats = await limitService.getUsageStats(userId, platform);
+      limits = await limitService.getUserLimits(userId);
+    } catch (limitError) {
+      console.error('Error getting limits/stats:', limitError);
+      // Return default values if limitService fails
+      stats = { count: 0, percentage: 0, isNearLimit: false };
+      limits = { [`${platform}MessagesPerMonth`]: 0 };
+    }
 
     res.json({
       success: true,
@@ -39,10 +47,19 @@ async function getUsageStats(req, res) {
 async function getAllUsageStats(req, res) {
   try {
     const userId = req.userId;
-    const limits = await limitService.getUserLimits(userId);
     
-    const whatsappStats = await limitService.getUsageStats(userId, 'whatsapp');
-    const telegramStats = await limitService.getUsageStats(userId, 'telegram');
+    let limits, whatsappStats, telegramStats;
+    try {
+      limits = await limitService.getUserLimits(userId);
+      whatsappStats = await limitService.getUsageStats(userId, 'whatsapp');
+      telegramStats = await limitService.getUsageStats(userId, 'telegram');
+    } catch (limitError) {
+      console.error('Error getting limits/stats:', limitError);
+      // Return default values if limitService fails
+      limits = { whatsappMessagesPerMonth: 0, telegramMessagesPerMonth: 0 };
+      whatsappStats = { count: 0, percentage: 0, isNearLimit: false };
+      telegramStats = { count: 0, percentage: 0, isNearLimit: false };
+    }
 
     res.json({
       success: true,

@@ -215,6 +215,16 @@ async function getPostUsageStats(req, res) {
     const userId = req.userId;
     const { Op } = require('sequelize');
     
+    // Get user's plan name
+    let planName = 'غير محدد';
+    try {
+      const limitService = require('../services/limitService');
+      const limits = await limitService.getUserLimits(userId);
+      planName = limits.planName || 'غير محدد';
+    } catch (limitError) {
+      console.error('Error getting plan name:', limitError);
+    }
+    
     // Get post usage statistics
     const totalPosts = await Post.count({ where: { userId } });
     const publishedPosts = await Post.count({ where: { userId, status: 'published' } });
@@ -249,7 +259,13 @@ async function getPostUsageStats(req, res) {
       }, {})
     };
     
-    return res.json({ success: true, stats: usageStats });
+    return res.json({ 
+      success: true, 
+      data: {
+        planName: planName,
+        stats: usageStats 
+      }
+    });
   } catch (error) {
     console.error('Error getting post usage stats:', error);
     return res.status(500).json({ success: false, message: 'Failed to get usage stats', error: error.message });

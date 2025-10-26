@@ -416,6 +416,52 @@ async function getEmployeeStats(req, res) {
   }
 }
 
+/**
+ * الحصول على بيانات الموظف الحالي
+ */
+async function getEmployeeProfile(req, res) {
+  try {
+    const employeeId = req.employeeId;
+    
+    if (!employeeId) {
+      return res.status(401).json({
+        success: false,
+        message: 'غير مصرح بالوصول'
+      });
+    }
+
+    const employee = await Employee.findByPk(employeeId, {
+      attributes: ['id', 'name', 'email', 'phone', 'permissions', 'isActive', 'createdAt']
+    });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'الموظف غير موجود'
+      });
+    }
+
+    res.json({
+      success: true,
+      employee: {
+        id: employee.id,
+        name: employee.name,
+        email: employee.email,
+        phone: employee.phone,
+        permissions: employee.permissions,
+        isActive: employee.isActive,
+        createdAt: employee.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Error getting employee profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'خطأ في جلب بيانات الموظف'
+    });
+  }
+}
+
 module.exports = {
   createEmployee,
   getEmployees,
@@ -424,5 +470,6 @@ module.exports = {
   deleteEmployee,
   employeeLogin,
   changeEmployeePassword,
-  getEmployeeStats
+  getEmployeeStats,
+  getEmployeeProfile
 };

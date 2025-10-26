@@ -10,34 +10,15 @@ const {
   deleteEmployee,
   employeeLogin,
   changeEmployeePassword,
-  getEmployeeStats
+  getEmployeeStats,
+  getEmployeeProfile
 } = require('../controllers/employee.controller');
 
 // تسجيل دخول الموظف (لا يحتاج مصادقة)
 router.post('/login', employeeLogin);
 
 // مسار للموظف للحصول على بياناته (يحتاج مصادقة موظف)
-router.get('/me', requireEmployeeAuth, async (req, res) => {
-  try {
-    const employee = req.employee;
-    res.json({
-      success: true,
-      employee: {
-        id: employee.id,
-        name: employee.name,
-        email: employee.email,
-        permissions: employee.permissions,
-        isActive: employee.isActive,
-        lastLoginAt: employee.lastLoginAt
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'خطأ في جلب بيانات الموظف'
-    });
-  }
-});
+router.get('/me', requireEmployeeAuth, getEmployeeProfile);
 
 // جميع المسارات الأخرى تحتاج مصادقة مالك
 router.use(requireAuth);

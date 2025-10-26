@@ -97,46 +97,55 @@ async function getBillingAnalytics(req, res) {
     console.log(`[Billing] Telegram usage for ${userId}: ${telegramUsage}/${limits.telegramMessagesPerMonth}`);
 
     // Get platform usage statistics
-    const [postsStats, whatsappStats, telegramStats] = await Promise.all([
-      // Posts statistics
-      Post.findAll({
-        where: { userId: userId },
-        attributes: [
-          [fn('COUNT', col('id')), 'totalPosts'],
-          [fn('COUNT', literal('CASE WHEN status = "published" THEN 1 END')), 'publishedPosts'],
-          [fn('COUNT', literal('CASE WHEN status = "scheduled" THEN 1 END')), 'scheduledPosts'],
-          [fn('COUNT', literal('CASE WHEN status = "draft" THEN 1 END')), 'draftPosts'],
-          [fn('COUNT', literal('CASE WHEN status = "failed" THEN 1 END')), 'failedPosts']
-        ],
-        raw: true
-      }),
+    let postsStats, whatsappStats, telegramStats;
+    try {
+      [postsStats, whatsappStats, telegramStats] = await Promise.all([
+        // Posts statistics
+        Post.findAll({
+          where: { userId: userId },
+          attributes: [
+            [fn('COUNT', col('id')), 'totalPosts'],
+            [fn('COUNT', literal('CASE WHEN status = "published" THEN 1 END')), 'publishedPosts'],
+            [fn('COUNT', literal('CASE WHEN status = "scheduled" THEN 1 END')), 'scheduledPosts'],
+            [fn('COUNT', literal('CASE WHEN status = "draft" THEN 1 END')), 'draftPosts'],
+            [fn('COUNT', literal('CASE WHEN status = "failed" THEN 1 END')), 'failedPosts']
+          ],
+          raw: true
+        }),
+        
+        // WhatsApp statistics - Only count bot responses for billing
+        MessageUsage.findAll({
+          where: { 
+            userId: userId,
+            platform: 'whatsapp',
+            messageType: 'bot_response'
+          },
+          attributes: [
+            [fn('SUM', col('count')), 'botResponses']
+          ],
+          raw: true
+        }),
       
-      // WhatsApp statistics - Only count bot responses for billing
-      MessageUsage.findAll({
-        where: { 
-          userId: userId,
-          platform: 'whatsapp',
-          messageType: 'bot_response'
-        },
-        attributes: [
-          [fn('SUM', col('count')), 'botResponses']
-        ],
-        raw: true
-      }),
-      
-      // Telegram statistics - Only count bot responses for billing
-      MessageUsage.findAll({
-        where: { 
-          userId: userId,
-          platform: 'telegram',
-          messageType: 'bot_response'
-        },
-        attributes: [
-          [fn('SUM', col('count')), 'botResponses']
-        ],
-        raw: true
-      })
-    ]);
+        // Telegram statistics - Only count bot responses for billing
+        MessageUsage.findAll({
+          where: { 
+            userId: userId,
+            platform: 'telegram',
+            messageType: 'bot_response'
+          },
+          attributes: [
+            [fn('SUM', col('count')), 'botResponses']
+          ],
+          raw: true
+        })
+      ]);
+    } catch (statsError) {
+      console.error('Error getting platform stats:', statsError);
+      // Set default values if stats fail
+      postsStats = [{ totalPosts: 0, publishedPosts: 0, scheduledPosts: 0, draftPosts: 0, failedPosts: 0 }];
+      whatsappStats = [{ botResponses: 0 }];
+      telegramStats = [{ botResponses: 0 }];
+    }
 
     // Calculate growth rate (simplified)
     const previousPeriodStart = new Date(startDate.getTime() - (endDate.getTime() - startDate.getTime()));
