@@ -10,38 +10,75 @@ const requireActiveSubscription = async (req, res, next) => {
     
     // إذا كان موظف، يتحقق من اشتراك المالك
     if (req.employeeId) {
-      const ownerId = req.ownerId;
-      console.log('[Active Subscription] Employee case - checking owner subscription:', ownerId);
-      
-      const subscription = await UserSubscription.findOne({
-        where: {
-          userId: ownerId,
-          status: 'active',
-          expiresAt: {
-            [require('sequelize').Op.gt]: new Date() // expiresAt > now
-          }
-        },
-        include: [
-          {
-            model: Plan,
-            as: 'plan',
-            attributes: ['id', 'name', 'permissions']
-          }
-        ]
-      });
-
-      console.log('[Active Subscription] Employee - Found subscription:', subscription ? 'Yes' : 'No');
-      if (subscription) {
-        console.log('[Active Subscription] Employee - Subscription details:', {
-          id: subscription.id,
-          status: subscription.status,
-          expiresAt: subscription.expiresAt,
-          planName: subscription.plan?.name
+      try {
+        const ownerId = req.ownerId;
+        console.log('[Active Subscription] Employee case - checking owner subscription:', ownerId);
+        
+        const subscription = await UserSubscription.findOne({
+          where: {
+            userId: ownerId,
+            status: 'active',
+            expiresAt: {
+              [require('sequelize').Op.gt]: new Date() // expiresAt > now
+            }
+          },
+          include: [
+            {
+              model: Plan,
+              as: 'plan',
+              attributes: ['id', 'name', 'permissions']
+            }
+          ]
         });
-      }
 
-      if (!subscription) {
-        // Set default permissions if no subscription found
+        console.log('[Active Subscription] Employee - Found subscription:', subscription ? 'Yes' : 'No');
+        if (subscription) {
+          console.log('[Active Subscription] Employee - Subscription details:', {
+            id: subscription.id,
+            status: subscription.status,
+            expiresAt: subscription.expiresAt,
+            planName: subscription.plan?.name
+          });
+        }
+
+        if (!subscription) {
+          // Set default permissions if no subscription found
+          req.userPermissions = {
+            canManageContent: true,
+            canManageWhatsApp: false,
+            canManageTelegram: false,
+            whatsappMessagesPerMonth: 0,
+            telegramMessagesPerMonth: 0,
+            monthlyPosts: 10
+          };
+          
+          console.log('[Active Subscription] Employee - No subscription found, using default permissions:', req.userPermissions);
+          
+          return next(); // Continue instead of returning error
+        }
+
+        // إضافة بيانات الاشتراك للطلب
+        req.userSubscription = subscription;
+        req.userPermissions = subscription.plan.permissions || {};
+        
+        // Ensure canManageContent is true if not set
+        if (req.userPermissions.canManageContent === undefined) {
+          req.userPermissions.canManageContent = true;
+        }
+        
+        // إضافة صلاحيات الموظف أيضاً
+        if (req.employee) {
+          req.employeePermissions = req.employee.permissions;
+        }
+        
+        console.log('[Active Subscription] Employee - User permissions:', req.userPermissions);
+        console.log('[Active Subscription] Employee - Employee permissions:', req.employeePermissions);
+        
+        return next();
+      } catch (employeeError) {
+        console.error('Employee permission check error:', employeeError);
+        
+        // Set default permissions if employee error occurs
         req.userPermissions = {
           canManageContent: true,
           canManageWhatsApp: false,
@@ -51,45 +88,10 @@ const requireActiveSubscription = async (req, res, next) => {
           monthlyPosts: 10
         };
         
-        console.log('[Active Subscription] Employee - No subscription found, using default permissions:', req.userPermissions);
+        console.log('[Active Subscription] Employee - Using default permissions due to error:', req.userPermissions);
         
         return next(); // Continue instead of returning error
       }
-
-      // إضافة بيانات الاشتراك للطلب
-      req.userSubscription = subscription;
-      req.userPermissions = subscription.plan.permissions || {};
-      
-      // Ensure canManageContent is true if not set
-      if (req.userPermissions.canManageContent === undefined) {
-        req.userPermissions.canManageContent = true;
-      }
-      
-      // إضافة صلاحيات الموظف أيضاً
-      if (req.employee) {
-        req.employeePermissions = req.employee.permissions;
-      }
-      
-      console.log('[Active Subscription] Employee - User permissions:', req.userPermissions);
-      console.log('[Active Subscription] Employee - Employee permissions:', req.employeePermissions);
-      
-      return next();
-    } catch (employeeError) {
-      console.error('Employee permission check error:', employeeError);
-      
-      // Set default permissions if employee error occurs
-      req.userPermissions = {
-        canManageContent: true,
-        canManageWhatsApp: false,
-        canManageTelegram: false,
-        whatsappMessagesPerMonth: 0,
-        telegramMessagesPerMonth: 0,
-        monthlyPosts: 10
-      };
-      
-      console.log('[Active Subscription] Employee - Using default permissions due to error:', req.userPermissions);
-      
-      return next(); // Continue instead of returning error
     }
     
     // للمالك العادي، يتحقق من اشتراكه
@@ -148,30 +150,14 @@ const requireActiveSubscription = async (req, res, next) => {
     console.log('[Active Subscription] User permissions:', req.userPermissions);
     
     next();
-  } catch (regularUserError) {
-    console.error('Regular user permission check error:', regularUserError);
-    
-    // Set default permissions if regular user error occurs
-    req.userPermissions = {
-      canManageContent: true,
-      canManageWhatsApp: false,
-      canManageTelegram: false,
-      whatsappMessagesPerMonth: 0,
-      telegramMessagesPerMonth: 0,
-      monthlyPosts: 10
-    };
-    
-    console.log('[Active Subscription] Regular user - Using default permissions due to error:', req.userPermissions);
-    
-    next(); // Continue instead of returning error
-  } catch (generalError) {
-    console.error('General permission check error:', generalError);
-    console.log('[Active Subscription] General error details:', {
-      message: generalError.message,
-      stack: generalError.stack
+  } catch (error) {
+    console.error('Permission check error:', error);
+    console.log('[Active Subscription] Error details:', {
+      message: error.message,
+      stack: error.stack
     });
     
-    // Set default permissions if general error occurs
+    // Set default permissions if any error occurs
     req.userPermissions = {
       canManageContent: true,
       canManageWhatsApp: false,
@@ -181,7 +167,7 @@ const requireActiveSubscription = async (req, res, next) => {
       monthlyPosts: 10
     };
     
-    console.log('[Active Subscription] General - Using default permissions due to error:', req.userPermissions);
+    console.log('[Active Subscription] Using default permissions due to error:', req.userPermissions);
     
     next(); // Continue instead of returning error
   }
