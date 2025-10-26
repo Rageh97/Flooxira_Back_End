@@ -5,7 +5,8 @@ async function getAllTutorials(req, res) {
   try {
     const tutorials = await Tutorial.findAll({
       where: { isActive: true },
-      order: [['order', 'ASC'], ['createdAt', 'DESC']]
+      order: [['order', 'ASC'], ['createdAt', 'DESC']],
+      attributes: ['id', 'title', 'description', 'youtubeUrl', 'youtubeVideoId', 'thumbnailUrl', 'duration', 'category', 'order', 'views', 'createdAt']
     });
 
     res.json({ success: true, tutorials });

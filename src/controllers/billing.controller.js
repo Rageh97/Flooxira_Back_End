@@ -185,6 +185,34 @@ async function getBillingAnalytics(req, res) {
       ? totalRevenue / subscriptionHistory.length 
       : 0;
 
+    // Safely handle subscription data
+    let safeCurrentSubscription = null;
+    let safeSubscriptionHistory = [];
+    
+    try {
+      if (currentSubscription) {
+        safeCurrentSubscription = {
+          id: currentSubscription.id,
+          planName: currentSubscription.plan?.name || 'غير محدد',
+          status: currentSubscription.status,
+          expiresAt: currentSubscription.expiresAt,
+          priceCents: currentSubscription.plan?.priceCents || 0
+        };
+      }
+      
+      if (subscriptionHistory && Array.isArray(subscriptionHistory)) {
+        safeSubscriptionHistory = subscriptionHistory.map(sub => ({
+          id: sub.id,
+          planName: sub.plan?.name || 'غير محدد',
+          status: sub.status,
+          createdAt: sub.createdAt,
+          priceCents: sub.plan?.priceCents || 0
+        }));
+      }
+    } catch (subError) {
+      console.error('Error processing subscription data:', subError);
+    }
+
     return res.json({
       success: true,
       data: {
@@ -226,8 +254,8 @@ async function getBillingAnalytics(req, res) {
           }
         ]
       },
-      currentSubscription: currentSubscription,
-      subscriptionHistory: subscriptionHistory
+      currentSubscription: safeCurrentSubscription,
+      subscriptionHistory: safeSubscriptionHistory
     });
   } catch (error) {
     console.error('Get billing analytics error:', error);
