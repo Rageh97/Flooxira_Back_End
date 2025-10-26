@@ -45,13 +45,13 @@ async function getBillingAnalytics(req, res) {
         status: 'active',
         expiresAt: { [Op.gt]: now }
       },
-      include: [{ model: Plan, as: 'plan' }]
+      include: [{ model: Plan, as: 'plan', required: false }]
     });
 
     // Get subscription history
     const subscriptionHistory = await UserSubscription.findAll({
       where: { userId: userId },
-      include: [{ model: Plan, as: 'plan' }],
+      include: [{ model: Plan, as: 'plan', required: false }],
       order: [['createdAt', 'DESC']]
     });
 
@@ -306,7 +306,7 @@ async function getRevenueChartData(req, res) {
             [Op.lte]: monthEnd
           }
         },
-        include: [{ model: Plan, as: 'plan' }]
+        include: [{ model: Plan, as: 'plan', required: false }]
       });
       
       const monthRevenue = monthSubscriptions.reduce((sum, sub) => {
@@ -377,7 +377,7 @@ async function getPlanDistribution(req, res) {
     
     const subscriptions = await UserSubscription.findAll({
       where: { userId: userId },
-      include: [{ model: Plan, as: 'plan' }]
+      include: [{ model: Plan, as: 'plan', required: false }]
     });
     
     const planCounts = {};
@@ -452,7 +452,7 @@ async function getSubscriptionTimeline(req, res) {
     
     const subscriptions = await UserSubscription.findAll({
       where: { userId: userId },
-      include: [{ model: Plan, as: 'plan' }],
+      include: [{ model: Plan, as: 'plan', required: false }],
       order: [['createdAt', 'DESC']]
     });
     

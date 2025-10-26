@@ -94,7 +94,9 @@ require('./models/whatsappTemplate');
 require('./models/botData');
 require('./models/botField');
 require('./models/botSettings');
-require('./models/associations').initializeAssociations();
+// Initialize associations after all models are loaded
+const { initializeAssociations } = require('./models/associations');
+initializeAssociations();
 
 
 const app = express();

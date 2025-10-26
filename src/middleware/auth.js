@@ -44,15 +44,20 @@ async function requireEmployeeAuth(req, res, next) {
     
     // Check if it's an employee
     if (payload.role === 'employee') {
-      const { Employee } = require('../models/employee');
-      const employee = await Employee.findByPk(payload.sub);
-      if (!employee || !employee.isActive) {
+      try {
+        const { Employee } = require('../models/employee');
+        const employee = await Employee.findByPk(payload.sub);
+        if (!employee || !employee.isActive) {
+          return res.status(401).json({ message: 'Unauthorized' });
+        }
+        req.employeeId = employee.id;
+        req.ownerId = employee.ownerId;
+        req.userId = employee.ownerId; // Set owner as the main user
+        req.employee = employee;
+      } catch (error) {
+        console.error('Employee auth error:', error);
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      req.employeeId = employee.id;
-      req.ownerId = employee.ownerId;
-      req.userId = employee.ownerId; // Set owner as the main user
-      req.employee = employee;
     } else {
       // Regular user
       const user = await User.findByPk(payload.sub);

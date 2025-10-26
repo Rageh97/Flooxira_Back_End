@@ -61,7 +61,7 @@ function initializeAssociations() {
   // UserSubscription associations
   UserSubscription.belongsTo(User, { foreignKey: 'userId', as: 'user' });
   UserSubscription.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
-  UserSubscription.belongsTo(SubscriptionRequest, { foreignKey: 'subscriptionRequestId', as: 'subscriptionRequest' });
+  UserSubscription.belongsTo(SubscriptionRequest, { foreignKey: 'subscriptionRequestId', as: 'subscriptionRequest', required: false });
 
   // Customer associations
   Customer.belongsTo(User, { foreignKey: 'userId', as: 'user' });

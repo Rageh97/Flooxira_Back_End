@@ -474,6 +474,15 @@ async function updateCustomer(req, res) {
       updateData.invoiceImage = `${baseUrl}/uploads/customers/${req.file.filename}`;
     }
 
+    // Ensure invoiceImage is a string, not an array or object
+    if (updateData.invoiceImage && typeof updateData.invoiceImage !== 'string') {
+      if (Array.isArray(updateData.invoiceImage)) {
+        updateData.invoiceImage = updateData.invoiceImage[0] || null;
+      } else if (typeof updateData.invoiceImage === 'object') {
+        updateData.invoiceImage = updateData.invoiceImage.url || updateData.invoiceImage.path || null;
+      }
+    }
+
     await customer.update(updateData);
 
     // جلب العميل المحدث مع البيانات المرتبطة
