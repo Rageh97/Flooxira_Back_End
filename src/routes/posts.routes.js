@@ -16,7 +16,7 @@ router.use(requireContentManagement);
 
 router.get('/test', (_req, res) => res.json({ ok: true }));
 router.get('/', ctrl.listPosts);
-router.get('/usage-stats', ctrl.getPostUsageStats);
+// router.get('/usage-stats', ctrl.getPostUsageStats); // Function not implemented
 router.post('/', checkMonthlyPostsLimit, ctrl.createPost);
 router.put('/:id', ctrl.updatePost);
 router.delete('/:id', ctrl.deletePost);
