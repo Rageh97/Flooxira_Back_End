@@ -36,11 +36,12 @@ class LimitService {
 
       if (!subscription || !subscription.plan) {
         return {
-          canManageWhatsApp: false,
-          canManageTelegram: false,
-          whatsappMessagesPerMonth: 0,
-          telegramMessagesPerMonth: 0,
-          planName: 'No Plan'
+        canManageWhatsApp: false,
+        canManageTelegram: false,
+        whatsappMessagesPerMonth: 0,
+        telegramMessagesPerMonth: 0,
+        monthlyPosts: 10,
+        planName: 'No Plan'
         };
       }
 
@@ -49,6 +50,7 @@ class LimitService {
         canManageTelegram: subscription.plan.permissions?.canManageTelegram || false,
         whatsappMessagesPerMonth: subscription.plan.permissions?.whatsappMessagesPerMonth || 0,
         telegramMessagesPerMonth: subscription.plan.permissions?.telegramMessagesPerMonth || 0,
+        monthlyPosts: subscription.plan.permissions?.monthlyPosts || 10,
         planName: subscription.plan.name,
         expiresAt: subscription.expiresAt
       };
@@ -67,6 +69,7 @@ class LimitService {
         canManageTelegram: false,
         whatsappMessagesPerMonth: 0,
         telegramMessagesPerMonth: 0,
+        monthlyPosts: 10,
         planName: 'Error'
       };
     }

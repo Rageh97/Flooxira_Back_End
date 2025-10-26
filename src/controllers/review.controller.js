@@ -5,6 +5,8 @@ const { sequelize } = require('../sequelize');
 // Get all reviews for users (approved only)
 async function getAllReviews(req, res) {
   try {
+    console.log('[Reviews] Fetching reviews...');
+    
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 9;
     const offset = (page - 1) * limit;
@@ -24,11 +26,43 @@ async function getAllReviews(req, res) {
       offset
     });
 
+    console.log('[Reviews] Found reviews:', reviews.length);
+
     const totalPages = Math.ceil(count / limit);
+
+    // If no reviews found, return empty array
+    if (reviews.length === 0) {
+      console.log('[Reviews] No reviews found, returning empty array');
+      return res.json({ 
+        success: true, 
+        reviews: [],
+        total: 0,
+        totalPages: 1,
+        currentPage: page,
+        hasNextPage: false,
+        hasPrevPage: false
+      });
+    }
+
+    // Ensure all reviews have required fields
+    const safeReviews = reviews.map(review => ({
+      id: review.id,
+      userId: review.userId,
+      rating: review.rating || 5,
+      title: review.title || 'بدون عنوان',
+      comment: review.comment || '',
+      status: review.status,
+      createdAt: review.createdAt,
+      user: {
+        id: review.user?.id || review.userId,
+        name: review.user?.name || 'عميل',
+        email: review.user?.email || ''
+      }
+    }));
 
     res.json({ 
       success: true, 
-      reviews,
+      reviews: safeReviews,
       total: count,
       totalPages,
       currentPage: page,
@@ -181,47 +215,75 @@ async function deleteReview(req, res) {
 // Get review statistics
 async function getReviewStats(req, res) {
   try {
+    console.log('[Review Stats] Fetching review statistics...');
+    
     const totalReviews = await Review.count();
     const approvedReviews = await Review.count({ where: { status: 'approved' } });
     const pendingReviews = await Review.count({ where: { status: 'pending' } });
     const rejectedReviews = await Review.count({ where: { status: 'rejected' } });
 
-    // Calculate average rating
-    const avgRatingResult = await Review.findOne({
-      where: { status: 'approved' },
-      attributes: [
-        [sequelize.fn('AVG', sequelize.col('rating')), 'avgRating']
-      ],
-      raw: true
-    });
+    console.log('[Review Stats] Counts:', { totalReviews, approvedReviews, pendingReviews, rejectedReviews });
 
-    const avgRating = avgRatingResult?.avgRating ? parseFloat(avgRatingResult.avgRating).toFixed(1) : 0;
+    // Calculate average rating
+    let avgRating = 0;
+    try {
+      const avgRatingResult = await Review.findOne({
+        where: { status: 'approved' },
+        attributes: [
+          [sequelize.fn('AVG', sequelize.col('rating')), 'avgRating']
+        ],
+        raw: true
+      });
+
+      avgRating = avgRatingResult?.avgRating ? parseFloat(avgRatingResult.avgRating).toFixed(1) : 0;
+    } catch (avgError) {
+      console.error('Error calculating average rating:', avgError);
+      avgRating = 0;
+    }
 
     // Get rating distribution
-    const ratingDistribution = await Review.findAll({
-      where: { status: 'approved' },
-      attributes: [
-        'rating',
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-      ],
-      group: ['rating'],
-      order: [['rating', 'ASC']],
-      raw: true
-    });
+    let ratingDistribution = {};
+    try {
+      const ratingDistributionData = await Review.findAll({
+        where: { status: 'approved' },
+        attributes: [
+          'rating',
+          [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+        ],
+        group: ['rating'],
+        order: [['rating', 'ASC']],
+        raw: true
+      });
+
+      ratingDistribution = ratingDistributionData.reduce((acc, item) => {
+        acc[item.rating] = parseInt(item.count);
+        return acc;
+      }, {});
+    } catch (distError) {
+      console.error('Error getting rating distribution:', distError);
+      ratingDistribution = {};
+    }
+
+    const stats = {
+      totalReviews: totalReviews,
+      averageRating: parseFloat(avgRating),
+      fiveStars: ratingDistribution[5] || 0,
+      fourStars: ratingDistribution[4] || 0,
+      threeStars: ratingDistribution[3] || 0,
+      twoStars: ratingDistribution[2] || 0,
+      oneStar: ratingDistribution[1] || 0,
+      total: totalReviews,
+      approved: approvedReviews,
+      pending: pendingReviews,
+      rejected: rejectedReviews,
+      ratingDistribution: ratingDistribution
+    };
+
+    console.log('[Review Stats] Final stats:', stats);
 
     res.json({
       success: true,
-      stats: {
-        total: totalReviews,
-        approved: approvedReviews,
-        pending: pendingReviews,
-        rejected: rejectedReviews,
-        averageRating: avgRating,
-        ratingDistribution: ratingDistribution.reduce((acc, item) => {
-          acc[item.rating] = parseInt(item.count);
-          return acc;
-        }, {})
-      }
+      stats: stats
     });
   } catch (e) {
     console.error('Error fetching review stats:', e);

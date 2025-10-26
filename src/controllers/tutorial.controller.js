@@ -3,13 +3,38 @@ const { Tutorial } = require('../models/tutorial');
 // Get all tutorials for users
 async function getAllTutorials(req, res) {
   try {
+    console.log('[Tutorials] Fetching tutorials...');
+    
     const tutorials = await Tutorial.findAll({
       where: { isActive: true },
       order: [['order', 'ASC'], ['createdAt', 'DESC']],
       attributes: ['id', 'title', 'description', 'youtubeUrl', 'youtubeVideoId', 'thumbnailUrl', 'duration', 'category', 'order', 'views', 'createdAt']
     });
 
-    res.json({ success: true, tutorials });
+    console.log('[Tutorials] Found tutorials:', tutorials.length);
+    
+    // If no tutorials found, return empty array
+    if (tutorials.length === 0) {
+      console.log('[Tutorials] No tutorials found, returning empty array');
+      return res.json({ success: true, tutorials: [] });
+    }
+    
+    // Ensure all tutorials have required fields
+    const safeTutorials = tutorials.map(tutorial => ({
+      id: tutorial.id,
+      title: tutorial.title || 'بدون عنوان',
+      description: tutorial.description || '',
+      youtubeUrl: tutorial.youtubeUrl || '',
+      youtubeVideoId: tutorial.youtubeVideoId || '',
+      thumbnailUrl: tutorial.thumbnailUrl || '',
+      duration: tutorial.duration || 0,
+      category: tutorial.category || 'عام',
+      order: tutorial.order || 0,
+      views: tutorial.views || 0,
+      createdAt: tutorial.createdAt
+    }));
+
+    res.json({ success: true, tutorials: safeTutorials });
   } catch (e) {
     console.error('Error fetching tutorials:', e);
     res.status(500).json({ success: false, message: 'Failed to fetch tutorials', error: e.message });

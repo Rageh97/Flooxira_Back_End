@@ -259,12 +259,47 @@ async function getPostUsageStats(req, res) {
       }, {})
     };
     
+    // Get user's monthly post limit
+    let monthlyLimit = 10; // Default limit
+    try {
+      const limitService = require('../services/limitService');
+      const limits = await limitService.getUserLimits(userId);
+      console.log('[Post Usage Stats] User limits:', limits);
+      monthlyLimit = limits.monthlyPosts || 10;
+      
+      // If monthlyPosts is 0 or undefined, use default
+      if (monthlyLimit === 0 || monthlyLimit === undefined) {
+        console.log('[Post Usage Stats] Using default limit: 10');
+        monthlyLimit = 10;
+      }
+    } catch (limitError) {
+      console.error('Error getting monthly limit:', limitError);
+      monthlyLimit = 10; // Use default
+    }
+
+    // Calculate usage statistics
+    const totalUsed = totalPosts;
+    const remaining = Math.max(0, monthlyLimit - totalUsed);
+    const percentage = monthlyLimit > 0 ? Math.round((totalUsed / monthlyLimit) * 100) : 0;
+    const isNearLimit = percentage >= 80 && percentage < 100;
+    const isAtLimit = percentage >= 100;
+
+    const result = {
+      planName: planName,
+      monthlyLimit: monthlyLimit,
+      totalUsed: totalUsed,
+      remaining: remaining,
+      percentage: percentage,
+      isNearLimit: isNearLimit,
+      isAtLimit: isAtLimit,
+      stats: usageStats 
+    };
+
+    console.log('[Post Usage Stats] Final result:', result);
+
     return res.json({ 
       success: true, 
-      data: {
-        planName: planName,
-        stats: usageStats 
-      }
+      data: result
     });
   } catch (error) {
     console.error('Error getting post usage stats:', error);

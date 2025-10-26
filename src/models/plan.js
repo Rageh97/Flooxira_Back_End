@@ -34,7 +34,7 @@ const Plan = sequelize.define('Plan', {
       platforms: [], // ['facebook', 'instagram', 'twitter', 'linkedin', 'pinterest', 'tiktok', 'youtube']
       
       // عدد المنشورات الشهرية
-      monthlyPosts: 0, // عدد البوستات المسموح شهرياً
+      monthlyPosts: 10, // عدد البوستات المسموح شهرياً
       
       // إدارة الواتساب والتليجرام
       canManageWhatsApp: false, // إمكانية إدارة الواتساب
