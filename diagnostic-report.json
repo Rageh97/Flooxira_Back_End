@@ -1,0 +1,36 @@
+{
+  "environment": {
+    "nodeVersion": "v22.14.0",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "puppeteer": {
+    "version": "^24.27.0",
+    "canLaunch": true,
+    "chromeVersion": "Chrome/142.0.7444.59"
+  },
+  "whatsappWebJs": {
+    "version": "^1.34.1"
+  },
+  "sessionFiles": {
+    ".wwebjs_auth": {
+      "exists": false
+    },
+    "data/wa-auth": {
+      "exists": false
+    },
+    "chromeProcesses": 3
+  },
+  "recommendations": [
+    "Try downgrading: npm install whatsapp-web.js@1.23.0",
+    "Kill Chrome processes: taskkill /F /IM chrome.exe /T"
+  ],
+  "network": {
+    "canReachWhatsApp": true,
+    "statusCode": 200
+  },
+  "whatsappWebConnection": {
+    "success": true,
+    "qrDetected": false
+  }
+}

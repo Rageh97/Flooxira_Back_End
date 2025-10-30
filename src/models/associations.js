@@ -39,6 +39,9 @@ const { YouTubeAccount } = require('./youtubeAccount');
 const { TikTokAccount } = require('./tiktokAccount');
 const { Service } = require('./service');
 const { Employee } = require('./employee');
+const { AIConversation } = require('./aiConversation');
+const { AIMessage } = require('./aiMessage');
+const { Appointment } = require('./appointment');
 
 // Define associations
 function initializeAssociations() {
@@ -97,8 +100,19 @@ function initializeAssociations() {
   // Service associations
   Service.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+  // AI Conversation associations
+  AIConversation.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  AIConversation.hasMany(AIMessage, { foreignKey: 'conversationId', as: 'messages' });
+
+  // AI Message associations
+  AIMessage.belongsTo(AIConversation, { foreignKey: 'conversationId', as: 'conversation' });
+
   // Employee associations
   Employee.belongsTo(User, { foreignKey: 'ownerId', as: 'owner' });
+
+  // Appointment associations
+  Appointment.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  Appointment.belongsTo(User, { foreignKey: 'assignedTo', as: 'assignedUser' });
 
   console.log('✅ Model associations initialized successfully');
 }

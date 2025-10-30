@@ -1,5 +1,5 @@
 const { User } = require('../models/user');
-const whatsappService = require('../services/baileysService');
+const whatsappService = require('../services/whatsappService');
 
 // Get bot status for user
 exports.getBotStatus = async (req, res) => {

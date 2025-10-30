@@ -67,6 +67,18 @@ const UserSubscription = sequelize.define('UserSubscription', {
     type: DataTypes.INTEGER,
     allowNull: true,
     comment: 'Final price after discount in cents'
+  },
+  // AI Credits tracking
+  aiCreditsUsed: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'عدد كريديت AI المستخدمة'
+  },
+  aiCreditsResetAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'تاريخ إعادة تعيين كريديت AI'
   }
 }, {
   tableName: 'user_subscriptions',

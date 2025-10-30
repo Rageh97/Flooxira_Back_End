@@ -41,9 +41,13 @@ const reviewRoutes = require('./routes/review.routes');
 const customerRoutes = require('./routes/customer.routes');
 const customFieldRoutes = require('./routes/customField.routes');
 const serviceRoutes = require('./routes/service.routes');
+const adminServiceRoutes = require('./routes/admin-service.routes');
+const aiRoutes = require('./routes/ai.routes');
 const employeeRoutes = require('./routes/employee.routes');
 const reminderRoutes = require('./routes/reminder.routes');
+const appointmentRoutes = require('./routes/appointment.routes');
 const conversationService = require('./services/conversationService');
+const appointmentNotificationService = require('./services/appointmentNotificationService');
 const axios = require('axios');
 
 // Import models to ensure they're registered before sync
@@ -61,6 +65,8 @@ require('./models/customField');
 require('./models/service');
 require('./models/employee');
 require('./models/reminder');
+require('./models/aiConversation');
+require('./models/aiMessage');
 require('./models/user');
 require('./models/plan');
 require('./models/telegramSchedule');
@@ -228,8 +234,11 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/custom-fields', customFieldRoutes);
 app.use('/api/services', serviceRoutes);
+app.use('/api/admin/services', adminServiceRoutes);
+app.use('/api/ai', aiRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/content', reminderRoutes);
+app.use('/api/appointments', appointmentRoutes);
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static('uploads'));
@@ -440,6 +449,9 @@ const { UserSubscription } = require('./models/userSubscription');
 const { Review } = require('./models/review');
 
 // All associations moved to associations.js
+
+// تشغيل جدولة تذكيرات المواعيد - معطل مؤقتاً لحل مشكلة WhatsApp
+// appointmentNotificationService.scheduleAppointmentReminders();
 
 process.on('uncaughtException', (err) => {
   // Avoid crashing on transient Windows file locking issues

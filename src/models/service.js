@@ -76,6 +76,17 @@ const Service = sequelize.define('Service', {
     type: DataTypes.JSON,
     allowNull: true,
     comment: 'وسوم الخدمة'
+  },
+  approvalStatus: {
+    type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+    allowNull: false,
+    defaultValue: 'pending',
+    comment: 'حالة الموافقة على الخدمة'
+  },
+  rejectionReason: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'سبب رفض الخدمة'
   }
 }, {
   tableName: 'services',

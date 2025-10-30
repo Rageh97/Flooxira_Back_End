@@ -4,6 +4,7 @@ const { BotData } = require('../models/botData');
 const { BotSettings } = require('../models/botSettings');
 const OpenAI = require('openai');
 const conversationService = require('./conversationService');
+const appointmentAIService = require('./appointmentAIService');
 let GoogleGenerativeAI;
 try { GoogleGenerativeAI = require('@google/generative-ai').GoogleGenerativeAI; } catch (_) { GoogleGenerativeAI = null; }
 
@@ -165,6 +166,21 @@ async function searchOrAnswer(userId, query, threshold = 0.5, limit = 3, contact
     } catch (e) {
       console.log('[BotSearch] Failed to get conversation context:', e.message);
     }
+  }
+
+  // Check for appointment booking requests first
+  try {
+    const appointmentResponse = await appointmentAIService.generateAppointmentResponse(userId, query, contactNumber);
+    if (appointmentResponse.isAppointmentRequest) {
+      return {
+        source: 'appointment_booking',
+        answer: appointmentResponse.response,
+        appointmentData: appointmentResponse.appointmentData,
+        needsMoreInfo: appointmentResponse.needsMoreInfo
+      };
+    }
+  } catch (e) {
+    console.log('[BotSearch] Failed to process appointment request:', e.message);
   }
 
   // Smart small talk with memory awareness

@@ -72,6 +72,7 @@ class WhatsAppService {
     this.qrCodes = new Map(); // Store QR codes for each user
     this.conversationLocks = new Map(); // Track active conversations to prevent multiple responses
     this.lastMessageTime = new Map(); // Track last message time per conversation
+    this.initializationLocks = new Map(); // CRITICAL: Prevent multiple simultaneous initializations
     this.setupErrorHandlers();
   }
 
@@ -155,13 +156,11 @@ class WhatsAppService {
 
   async startSession(userId, options = {}) {
     try {
-      // Explicitly clear stopped flag when starting
-      const prev = this.userStates.get(userId) || {};
-      prev.stopped = false;
-      this.userStates.set(userId, prev);
-      // Check if already initializing
-      const state = this.userStates.get(userId);
-      if (state?.initializing) {
+      console.log(`[WA] 🚀 startSession called for user ${userId}`);
+      
+      // CRITICAL: Check if initialization is already in progress
+      if (this.initializationLocks.has(userId)) {
+        console.log(`[WA] ⚠️ BLOCKED: Initialization already in progress for user ${userId}`);
         return {
           success: true,
           message: 'WhatsApp session is already initializing',
@@ -169,78 +168,47 @@ class WhatsAppService {
           status: this.qrCodes.get(userId) ? 'qr_generated' : 'initializing'
         };
       }
+      
+      // SET LOCK immediately to prevent concurrent calls
+      this.initializationLocks.set(userId, true);
+      console.log(`[WA] 🔒 Lock SET for user ${userId}`);
+      
+      // Explicitly clear stopped flag when starting
+      const prev = this.userStates.get(userId) || {};
+      prev.stopped = false;
+      this.userStates.set(userId, prev);
 
       // Check if user already has an active session
       if (this.userClients.has(userId)) {
-        const existingClient = this.userClients.get(userId);
-        try {
-          const clientState = await existingClient.getState();
-          if (clientState === 'CONNECTED') {
-            return {
-              success: true,
-              message: 'WhatsApp session already active',
-              qrCode: null,
-              status: 'connected'
-            };
-          }
-        } catch (error) {
-          console.log(`[WA] Could not get state for existing client, recreating: ${error.message}`);
-          this.userClients.delete(userId);
-        }
+        console.log(`[WA] User ${userId} already has a client - returning existing session`);
+        // DISABLED state check - may cause LOGOUT
+        // Just return that session exists
+        this.initializationLocks.delete(userId);
+        return {
+          success: true,
+          message: 'WhatsApp session already active',
+          qrCode: null,
+          status: 'connected'
+        };
       }
 
       // Set initializing state and reset message counter
       this.userStates.set(userId, { initializing: true, reconnecting: false, stopped: false });
       this.messageCounters.set(userId, 0);
 
-      // Create WhatsApp client with enhanced configuration
-      const sessionId = `user_${userId}_${Date.now()}`;
+      // Create WhatsApp client with FIXED session ID (no timestamp!)
+      // Using timestamp creates NEW device each time → WhatsApp logs out old sessions!
+      const sessionId = `user_${userId}`;
+      console.log(`[WA] 📱 Creating client with FIXED session ID: ${sessionId}`);
+      
+      // 🔥 OPTIMIZED CLIENT - أفضل إعدادات للاستقرار
       const client = new Client({
         authStrategy: new LocalAuth({
           clientId: sessionId,
-          dataPath: `./data/wa-auth/${sessionId}`
+          dataPath: './data/wa-auth'
         }),
         puppeteer: {
-          headless: true,
-          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_EXECUTABLE_PATH || (() => {
-            // Try different Chrome/Chromium paths
-            const paths = [
-              '/snap/bin/chromium', // Snap-based Chromium
-              '/usr/bin/google-chrome',
-              '/usr/bin/google-chrome-stable',
-              '/usr/bin/chromium-browser',
-              '/usr/bin/chromium',
-              '/usr/bin/chromium-browser-stable',
-              '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-              'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-              'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
-            ];
-            const foundPath = paths.find(p => {
-              try {
-                return fs.existsSync(p);
-              } catch (e) {
-                return false;
-              }
-            });
-            console.log(`[WA] Chrome executable found: ${foundPath || 'none'}`);
-            // If no Chrome found, let Puppeteer use its bundled Chromium
-            if (!foundPath) {
-              console.log(`[WA] No system Chrome found, using Puppeteer's bundled Chromium`);
-              return undefined; // Let Puppeteer use its bundled Chromium
-            }
-            
-            // Test if the found Chrome executable actually works
-            try {
-              const { execSync } = require('child_process');
-              execSync(`${foundPath} --version`, { timeout: 5000 });
-              console.log(`[WA] Chrome executable verified: ${foundPath}`);
-              return foundPath;
-            } catch (testError) {
-              console.log(`[WA] Chrome executable test failed: ${testError.message}`);
-              console.log(`[WA] Falling back to Puppeteer's bundled Chromium`);
-              return undefined;
-            }
-          })(),
+          headless: true, // ✅ headless للاستقرار
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -248,38 +216,22 @@ class WhatsAppService {
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
+            '--single-process',
             '--disable-gpu',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--disable-logging',
-            '--disable-extensions',
-            '--disable-plugins',
-            '--disable-images',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-blink-features=AutomationControlled',
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            '--disable-background-networking',
-            '--disable-default-apps',
-            '--disable-sync',
-            '--disable-translate',
-            '--hide-scrollbars',
-            '--metrics-recording-only',
-            '--mute-audio',
-            '--no-first-run',
-            '--safebrowsing-disable-auto-update',
-            '--disable-ipc-flooding-protection'
+            '--disable-blink-features=AutomationControlled'
           ],
-          timeout: 60000,
-          handleSIGINT: false,
-          handleSIGTERM: false,
-          handleSIGHUP: false
+          defaultViewport: null,
+          ignoreHTTPSErrors: true
         },
+        webVersionCache: {
+          type: 'remote',
+          remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+        },
+        qrMaxRetries: 5,
+        authTimeoutMs: 60000,
         restartOnAuthFail: false,
         takeoverOnConflict: false,
-        takeoverTimeoutMs: 0,
-        authTimeoutMs: 0
+        takeoverTimeoutMs: 0
       });
 
       let qrCodeData = null;
@@ -300,8 +252,9 @@ class WhatsAppService {
         }
       });
 
-      client.on('ready', () => {
-        console.log(`WhatsApp client ready for user ${userId}`);
+      // Use 'once' to ensure these events fire only ONCE per client lifecycle
+      client.once('ready', async () => {
+        console.log(`[WA] ✅ WhatsApp client ready for user ${userId}`);
         this.userClients.set(userId, client);
         const s = this.userStates.get(userId) || {};
         s.initializing = false;
@@ -311,24 +264,74 @@ class WhatsAppService {
         // Clear QR code once connected
         this.qrCodes.delete(userId);
         
-        this.setupKeepAlive(userId, client);
+        // RELEASE LOCK when ready
+        this.initializationLocks.delete(userId);
+        console.log(`[WA] 🔓 Lock RELEASED for user ${userId} (ready)`);
+        
+        // 🤖 INJECT ANTI-DETECTION SCRIPT
+        try {
+          const pages = await client.pupBrowser.pages();
+          const page = pages[0];
+          if (page) {
+            await page.evaluateOnNewDocument(() => {
+              // Remove webdriver property
+              Object.defineProperty(navigator, 'webdriver', { get: () => false });
+              
+              // Remove automation flags
+              Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+              Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+              
+              // Override permissions
+              const originalQuery = window.navigator.permissions.query;
+              window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                  Promise.resolve({ state: Notification.permission }) :
+                  originalQuery(parameters)
+              );
+              
+              console.log('[WA] 🤖 Anti-detection injected successfully');
+            });
+            console.log(`[WA] 🤖 Anti-detection script injected for user ${userId}`);
+          }
+        } catch (antiDetectErr) {
+          console.log(`[WA] ⚠️ Could not inject anti-detection (non-critical): ${antiDetectErr.message}`);
+        }
+        
+        console.log(`[WA] Session successfully established for user ${userId}`);
+        console.log(`[WA] ✅ Keep-alive DISABLED - الاتصال سيبقى بدون تدخل`);
       });
 
-      client.on('authenticated', () => {
-        console.log(`WhatsApp client authenticated for user ${userId}`);
+      client.once('authenticated', () => {
+        console.log(`[WA] 🔐 WhatsApp client authenticated for user ${userId}`);
       });
 
-      client.on('auth_failure', (msg) => {
-        console.error(`WhatsApp auth failure for user ${userId}:`, msg);
+      client.once('auth_failure', (msg) => {
+        console.error(`[WA] ❌ WhatsApp auth failure for user ${userId}:`, msg);
         this.userClients.delete(userId);
         this.qrCodes.delete(userId);
         const s = this.userStates.get(userId) || {};
         s.initializing = false;
         this.userStates.set(userId, s);
+        
+        // RELEASE LOCK on auth failure
+        this.initializationLocks.delete(userId);
+        console.log(`[WA] 🔓 Lock RELEASED for user ${userId} (auth_failure)`);
       });
 
-      client.on('disconnected', (reason) => {
-        console.log(`WhatsApp client disconnected for user ${userId}:`, reason);
+      // Use 'once' to ensure disconnection handler fires only ONCE
+      client.once('disconnected', (reason) => {
+        console.log(`[WA] ⚠️ WhatsApp client disconnected for user ${userId}:`, reason);
+        
+        // ⚠️ معالجة خاصة للـ LOGOUT - واتساب كشف الأتمتة
+        if (reason === 'LOGOUT') {
+          console.error(`[WA] 🚨 CRITICAL: WhatsApp detected automation for user ${userId}!`);
+          console.error(`[WA] 💡 Solution: Run 'node cleanup-sessions.js' and scan QR again`);
+          console.error(`[WA] 💡 Keep WhatsApp open on phone for 3-5 minutes after scanning`);
+          
+          // حذف session files تلقائياً عند LOGOUT
+          this.cleanupSessionFilesOnLogout(userId);
+        }
+        
         this.handleDisconnection(userId, reason);
       });
 
@@ -381,13 +384,29 @@ class WhatsAppService {
         }
       });
 
-      // Initialize the client with error handling
+      // Initialize the client with error handling and timeout
       try {
-        await client.initialize();
-        console.log(`[WA] Client initialized successfully for user ${userId}`);
+        console.log(`[WA] 🚀 Calling client.initialize() for user ${userId}...`);
+        
+        // Add timeout to prevent hanging
+        const initPromise = client.initialize();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Initialization timeout after 120 seconds')), 120000)
+        );
+        
+        await Promise.race([initPromise, timeoutPromise]);
+        console.log(`[WA] ✅ Client initialized successfully for user ${userId}`);
       } catch (initError) {
-        console.error(`[WA] Client initialization failed for user ${userId}:`, initError);
+        console.error(`[WA] ❌ Client initialization failed for user ${userId}:`, initError.message);
         this.userStates.set(userId, { initializing: false, reconnecting: false });
+        this.initializationLocks.delete(userId);
+        
+        // Clean up failed client
+        try {
+          client.removeAllListeners();
+          await client.destroy().catch(() => {});
+        } catch (e) {}
+        
         throw new Error(`Failed to initialize WhatsApp client: ${initError.message}`);
       }
 
@@ -402,10 +421,15 @@ class WhatsAppService {
       };
 
     } catch (error) {
-      console.error('WhatsApp session start error:', error);
+      console.error('[WA] ❌ WhatsApp session start error:', error);
       const s = this.userStates.get(userId) || {};
       s.initializing = false;
       this.userStates.set(userId, s);
+      
+      // RELEASE LOCK on error
+      this.initializationLocks.delete(userId);
+      console.log(`[WA] 🔓 Lock RELEASED for user ${userId} (error)`);
+      
       return {
         success: false,
         message: 'Failed to start WhatsApp session',
@@ -415,7 +439,7 @@ class WhatsAppService {
   }
 
   setupKeepAlive(userId, client) {
-    // Set up continuous activity to prevent session timeout
+    // ✅ SAFE Keep-alive using sendPresenceAvailable instead of getState
     const keepAliveInterval = setInterval(async () => {
       try {
         if (!this.userClients.has(userId)) {
@@ -425,27 +449,22 @@ class WhatsAppService {
         }
         
         if (client && client.info && client.info.wid) {
-          const messageCount = this.messageCounters.get(userId) || 0;
-          console.log(`[WA] Keep-alive check for user ${userId} - still connected (${messageCount} messages processed)`);
-          
           try {
-            const state = await client.getState();
-            if (state === 'CONNECTED') {
-              console.log(`[WA] Session active for user ${userId}`);
-            } else {
-              console.log(`[WA] Session not connected for user ${userId}, state: ${state}`);
-              clearInterval(keepAliveInterval);
-            }
-          } catch (stateError) {
-            console.log(`[WA] State check failed for user ${userId}, stopping keep-alive`);
+            // ✅ استخدام sendPresenceAvailable بدلاً من getState - أكثر أماناً!
+            await client.sendPresenceAvailable();
+            const messageCount = this.messageCounters.get(userId) || 0;
+            console.log(`[WA] 💚 Keep-alive ping sent for user ${userId} (${messageCount} messages)`);
+          } catch (presenceError) {
+            // إذا فشل presence، معناه الاتصال انقطع
+            console.log(`[WA] ⚠️ Keep-alive failed for user ${userId}, may be disconnected`);
             clearInterval(keepAliveInterval);
           }
         }
       } catch (error) {
-        console.log(`[WA] Keep-alive check failed for user ${userId}:`, error.message);
+        console.log(`[WA] Keep-alive error for user ${userId}:`, error.message);
         clearInterval(keepAliveInterval);
       }
-    }, 10000);
+    }, 50000); // ✅ كل 50 ثانية بدلاً من 10 - أقل تطفلاً
 
     // Store the interval ID for cleanup
     const s = this.userStates.get(userId) || {};
@@ -454,8 +473,14 @@ class WhatsAppService {
   }
 
   handleDisconnection(userId, reason) {
+    console.log(`[WA] 🔌 handleDisconnection called for user ${userId}, reason:`, reason);
+    
     this.userClients.delete(userId);
     this.qrCodes.delete(userId);
+    
+    // RELEASE LOCK on disconnection
+    this.initializationLocks.delete(userId);
+    console.log(`[WA] 🔓 Lock RELEASED for user ${userId} (disconnected)`);
     
     // Clean up conversation locks and message times for this user
     this.cleanupUserConversations(userId);
@@ -474,31 +499,17 @@ class WhatsAppService {
     
     this.userStates.set(userId, s);
     
-    // Auto-reconnect after 5 seconds (unless explicitly stopped)
-    if (!shouldStayStopped && !this.userStates.get(userId)?.reconnecting) {
-      const s = this.userStates.get(userId) || {};
-      s.reconnecting = true;
-      this.userStates.set(userId, s);
-      
-      setTimeout(() => {
-        if (!this.userClients.has(userId)) {
-          console.log(`[WA] Auto-reconnecting user ${userId} after disconnect...`);
-          try {
-            this.startSession(userId);
-          } catch (reconnectError) {
-            console.log(`[WA] Reconnection failed for user ${userId}:`, reconnectError.message);
-            const s = this.userStates.get(userId) || {};
-            s.reconnecting = false;
-            this.userStates.set(userId, s);
-          }
-        }
-      }, 5000);
-    }
+    // NO AUTO-RECONNECT - User must manually reconnect
+    console.log(`[WA] Session disconnected for user ${userId}. Manual reconnection required.`);
     
-    // Clean up session files
-    setTimeout(() => {
-      this.cleanupSessionFiles(userId);
-    }, 10000);
+    // Clear reconnecting flag
+    const state = this.userStates.get(userId) || {};
+    state.reconnecting = false;
+    state.stopped = false; // Reset stopped flag to allow manual reconnect
+    this.userStates.set(userId, state);
+    
+    // DON'T clean up session files - let them persist for reconnection!
+    console.log(`[WA] Session files preserved for future reconnection`);
   }
 
   cleanupSessionFiles(userId) {
@@ -520,6 +531,40 @@ class WhatsAppService {
       }
     } catch (cleanupError) {
       // Silently ignore cleanup errors
+    }
+  }
+
+  // ⚠️ تنظيف شامل عند LOGOUT - حذف كل session files للمستخدم
+  cleanupSessionFilesOnLogout(userId) {
+    try {
+      const sessionId = `user_${userId}`;
+      const authPaths = [
+        './data/wa-auth',
+        './.wwebjs_auth'
+      ];
+      
+      authPaths.forEach(authDir => {
+        if (fs.existsSync(authDir)) {
+          const entries = fs.readdirSync(authDir);
+          entries.forEach(entry => {
+            // حذف أي session يخص هذا المستخدم
+            if (entry.includes(sessionId) || entry.startsWith(`session-${sessionId}`)) {
+              const sessionPath = path.join(authDir, entry);
+              try {
+                console.log(`[WA] 🗑️ Removing corrupted session: ${entry}`);
+                fs.rmSync(sessionPath, { recursive: true, force: true, maxRetries: 3 });
+                console.log(`[WA] ✅ Removed: ${entry}`);
+              } catch (err) {
+                if (err.code === 'EBUSY' || err.code === 'EPERM') {
+                  console.log(`[WA] ⚠️ Could not remove ${entry} (file locked). Run cleanup-sessions.js manually.`);
+                }
+              }
+            }
+          });
+        }
+      });
+    } catch (error) {
+      console.error(`[WA] Error cleaning up session files for user ${userId}:`, error.message);
     }
   }
 
@@ -1047,15 +1092,9 @@ class WhatsAppService {
         return false;
       }
 
-      // Prefer to be connected, but if state check fails we will still attempt to send
-      try {
-        const state = await client.getState();
-        if (state !== 'CONNECTED') {
-          console.log(`[WA] Client state is ${state} for user ${userId}; will attempt send anyway.`);
-        }
-      } catch (e) {
-        console.log(`[WA] Could not verify client state before sending for user ${userId}:`, e?.message || e);
-      }
+      // DISABLED state check - may cause LOGOUT issues
+      // Just attempt to send directly
+      console.log(`[WA] Sending message for user ${userId} without state check`);
 
       // Resolve destination chat id
       let chatId = to;
@@ -1143,7 +1182,22 @@ class WhatsAppService {
   }
 
   async getQRCode(userId) {
-    return this.qrCodes.get(userId) || null;
+    const qrCode = this.qrCodes.get(userId);
+    console.log(`[WA] getQRCode for user ${userId}:`, qrCode ? 'QR EXISTS' : 'NO QR');
+    
+    if (qrCode) {
+      return {
+        success: true,
+        qrCode: qrCode,
+        message: 'QR Code available'
+      };
+    }
+    
+    return {
+      success: true,
+      qrCode: null,
+      message: 'No QR Code available. Please start a new session.'
+    };
   }
 
   // Clean up conversation locks and message times for a specific user

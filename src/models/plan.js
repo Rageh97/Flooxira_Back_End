@@ -56,7 +56,11 @@ const Plan = sequelize.define('Plan', {
       
       // إدارة الموظفين
       canManageEmployees: false, // إمكانية إدارة الموظفين
-      maxEmployees: 0 // عدد الموظفين المسموح به (0 = غير محدود)
+      maxEmployees: 0, // عدد الموظفين المسموح به (0 = غير محدود)
+      
+      // AI Features
+      canUseAI: false, // إمكانية استخدام ميزة AI
+      aiCredits: 0 // عدد كريديت AI المسموح به شهرياً (0 = غير محدود)
     }
   },
   isActive: {

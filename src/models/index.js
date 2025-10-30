@@ -39,6 +39,7 @@ const { YouTubeAccount } = require('./youtubeAccount');
 const { TikTokAccount } = require('./tiktokAccount');
 const { Reminder } = require('./reminder');
 const { Employee } = require('./employee');
+const { Appointment } = require('./appointment');
 
 module.exports = {
   User,
@@ -80,6 +81,7 @@ module.exports = {
   YouTubeAccount,
   TikTokAccount,
   Reminder,
-  Employee
+  Employee,
+  Appointment
 };
 

@@ -48,7 +48,8 @@ async function createService(req, res) {
       image: imagePath,
       category: category || null,
       tags: tags ? (Array.isArray(tags) ? tags : JSON.parse(tags)) : null,
-      isActive: isActive !== undefined ? isActive : true
+      isActive: isActive !== undefined ? isActive : true,
+      approvalStatus: 'pending' // All new services need approval
     });
 
     return res.status(201).json({ 
@@ -119,7 +120,11 @@ async function getAllActiveServices(req, res) {
     const { page = 1, limit = 20, category, search } = req.query;
     const offset = (page - 1) * limit;
 
-    const whereClause = { isActive: true };
+    // Only show approved and active services to the public
+    const whereClause = { 
+      isActive: true,
+      approvalStatus: 'approved' // Only show approved services
+    };
 
     if (category) {
       whereClause.category = category;
@@ -326,6 +331,125 @@ async function getServiceStats(req, res) {
   }
 }
 
+// Admin: Get all services pending approval
+async function getPendingServices(req, res) {
+  try {
+    const services = await Service.findAll({
+      where: { 
+        approvalStatus: 'pending' 
+      },
+      order: [['createdAt', 'DESC']],
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'name', 'email']
+      }]
+    });
+
+    return res.json({ 
+      success: true, 
+      services 
+    });
+  } catch (error) {
+    console.error('Get pending services error:', error);
+    return res.status(500).json({ message: 'فشل في جلب الخدمات المعلقة' });
+  }
+}
+
+// Admin: Get all services (with filter)
+async function getAllServicesAdmin(req, res) {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const whereClause = {};
+    if (status) {
+      whereClause.approvalStatus = status;
+    }
+
+    const { count, rows: services } = await Service.findAndCountAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      offset: offset,
+      order: [['createdAt', 'DESC']],
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'name', 'email']
+      }]
+    });
+
+    return res.json({ 
+      success: true, 
+      services,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get all services admin error:', error);
+    return res.status(500).json({ message: 'فشل في جلب الخدمات' });
+  }
+}
+
+// Admin: Approve service
+async function approveService(req, res) {
+  try {
+    const { serviceId } = req.params;
+
+    const service = await Service.findByPk(serviceId);
+
+    if (!service) {
+      return res.status(404).json({ message: 'الخدمة غير موجودة' });
+    }
+
+    service.approvalStatus = 'approved';
+    service.rejectionReason = null;
+    service.isActive = true; // Activate service when approved
+    await service.save();
+
+    return res.json({ 
+      success: true, 
+      service,
+      message: 'تمت الموافقة على الخدمة بنجاح وتم تنشيطها' 
+    });
+  } catch (error) {
+    console.error('Approve service error:', error);
+    return res.status(500).json({ message: 'فشل في الموافقة على الخدمة' });
+  }
+}
+
+// Admin: Reject service
+async function rejectService(req, res) {
+  try {
+    const { serviceId } = req.params;
+    const { reason } = req.body;
+
+    const service = await Service.findByPk(serviceId);
+
+    if (!service) {
+      return res.status(404).json({ message: 'الخدمة غير موجودة' });
+    }
+
+    service.approvalStatus = 'rejected';
+    service.rejectionReason = reason || 'لم يتم تحديد السبب';
+    service.isActive = false; // Deactivate rejected services
+    await service.save();
+
+    return res.json({ 
+      success: true, 
+      service,
+      message: 'تم رفض الخدمة' 
+    });
+  } catch (error) {
+    console.error('Reject service error:', error);
+    return res.status(500).json({ message: 'فشل في رفض الخدمة' });
+  }
+}
+
 module.exports = {
   createService,
   getUserServices,
@@ -334,5 +458,10 @@ module.exports = {
   updateService,
   deleteService,
   incrementClickCount,
-  getServiceStats
+  getServiceStats,
+  // Admin functions
+  getPendingServices,
+  getAllServicesAdmin,
+  approveService,
+  rejectService
 };

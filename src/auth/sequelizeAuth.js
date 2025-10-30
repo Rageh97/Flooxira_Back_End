@@ -56,25 +56,30 @@ class SequelizeAuth {
   async setAuthEventPayload(payload) {
     // Save session data from WhatsApp Web
     try {
-      console.log(`[SequelizeAuth] Saving session data for ${this.clientId}`);
+      const sessionDataJson = JSON.stringify(payload);
+      const dataSizeKB = (sessionDataJson.length / 1024).toFixed(2);
+      console.log(`[SequelizeAuth] 💾 Saving session data for ${this.clientId} (${dataSizeKB} KB)`);
       
       const [session, created] = await WhatsappSession.findOrCreate({
         where: { clientId: this.clientId },
         defaults: {
           userId: this.userId,
           clientId: this.clientId,
-          sessionData: JSON.stringify(payload),
+          sessionData: sessionDataJson,
           isActive: true
         }
       });
 
       if (!created) {
-        session.sessionData = JSON.stringify(payload);
+        session.sessionData = sessionDataJson;
         session.isActive = true;
         await session.save();
+        console.log(`[SequelizeAuth] ✅ Session data updated for ${this.clientId}`);
+      } else {
+        console.log(`[SequelizeAuth] ✅ New session data created for ${this.clientId}`);
       }
 
-      console.log(`[SequelizeAuth] Session data saved for ${this.clientId}`);
+      console.log(`[SequelizeAuth] Session data saved successfully for ${this.clientId}`);
     } catch (error) {
       console.error('[SequelizeAuth] Error saving auth payload:', error);
     }
