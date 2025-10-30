@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const whatsappService = require('../services/baileysService');
+const whatsappService = require('../services/whatsappService');
 const { WhatsappChat } = require('../models/whatsappChat');
 
 const uploadDir = path.join(process.cwd(), 'uploads', 'media');

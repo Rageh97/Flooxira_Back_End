@@ -1,5 +1,5 @@
 const { ContactTag } = require('../models/tag');
-const whatsappService = require('../services/baileysService');
+const whatsappService = require('../services/whatsappService');
 
 exports.sendToTag = async (req, res) => {
   try {

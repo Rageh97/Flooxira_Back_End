@@ -1,6 +1,6 @@
 const { ContentItem } = require('../models');
 const { Reminder } = require('../models/reminder');
-const whatsappService = require('../services/baileysService');
+const whatsappService = require('../services/whatsappService');
 
 // Create reminder
 const createReminder = async (req, res) => {
