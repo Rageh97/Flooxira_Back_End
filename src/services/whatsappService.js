@@ -73,6 +73,10 @@ class WhatsAppService {
     this.conversationLocks = new Map(); // Track active conversations to prevent multiple responses
     this.lastMessageTime = new Map(); // Track last message time per conversation
     this.initializationLocks = new Map(); // CRITICAL: Prevent multiple simultaneous initializations
+    this.statusCache = new Map(); // ✅ Cache status to prevent repeated getState() calls
+    this.userCache = new Map(); // ✅ Cache user data to prevent repeated DB queries
+    this.settingsCache = new Map(); // ✅ Cache bot settings to prevent repeated DB queries
+    this.knowledgeBaseCache = new Map(); // ✅ Cache knowledge base to prevent repeated DB queries
     this.setupErrorHandlers();
   }
 
@@ -81,39 +85,98 @@ class WhatsAppService {
     process.removeAllListeners('unhandledRejection');
     process.removeAllListeners('uncaughtException');
 
+    // ✅ Handle unhandled promise rejections
+    // Ignore EBUSY errors from LocalAuth.logout when Chrome/Puppeteer files are locked
     process.on('unhandledRejection', (reason, promise) => {
-      if (reason && reason.message && (
-        reason.message.includes('EBUSY') ||
-        reason.message.includes('resource busy or locked') ||
-        reason.message.includes('LocalAuth') ||
-        reason.message.includes('chrome_debug.log') ||
-        reason.message.includes('Cookies') ||
-        reason.message.includes('unlink')
-      )) {
+      // ✅ Ignore file locking errors during logout cleanup
+      const errorMessage = reason instanceof Error ? reason.message : String(reason);
+      
+      if (
+        errorMessage.includes('EBUSY') ||
+        errorMessage.includes('resource busy or locked') ||
+        errorMessage.includes('EPERM') ||
+        errorMessage.includes('EACCES') ||
+        errorMessage.includes('ENOENT') ||
+        errorMessage.includes('LocalAuth') ||
+        errorMessage.includes('LocalAuth.js') ||
+        errorMessage.includes('logout') ||
+        errorMessage.includes('unlink') ||
+        errorMessage.includes('rmSync') ||
+        errorMessage.includes('chrome_debug.log') ||
+        errorMessage.includes('Cookies-journal') ||
+        errorMessage.includes('Cookies') ||
+        errorMessage.includes('Default') ||
+        errorMessage.includes('Target closed') ||
+        errorMessage.includes('Protocol error') ||
+        errorMessage.includes('Session closed') ||
+        errorMessage.includes('Browser closed') ||
+        errorMessage.includes('Navigation failed') ||
+        errorMessage.includes('Execution context was destroyed') ||
+        errorMessage.includes('Page closed')
+      ) {
+        // ✅ Silent - these are non-critical errors from file cleanup during logout
         return;
       }
-      console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+      
+      // Only log unexpected errors (not file cleanup errors)
+      if (reason instanceof Error) {
+        console.error('Unhandled Rejection:', reason.message);
+      } else {
+        console.error('Unhandled Rejection:', reason);
+      }
     });
 
+    // ✅ Handle uncaught exceptions
+    // Ignore EBUSY errors from LocalAuth.logout when Chrome/Puppeteer files are locked
     process.on('uncaughtException', (error) => {
-      if (error && error.message && (
-        error.message.includes('EBUSY') ||
-        error.message.includes('resource busy or locked') ||
-        error.message.includes('LocalAuth') ||
-        error.message.includes('chrome_debug.log') ||
-        error.message.includes('Cookies') ||
-        error.message.includes('unlink')
-      )) {
+      const errorMessage = error.message || String(error);
+      
+      // ✅ Ignore file locking errors during logout cleanup
+      if (
+        errorMessage.includes('EBUSY') ||
+        errorMessage.includes('resource busy or locked') ||
+        errorMessage.includes('EPERM') ||
+        errorMessage.includes('EACCES') ||
+        errorMessage.includes('ENOENT') ||
+        errorMessage.includes('LocalAuth') ||
+        errorMessage.includes('LocalAuth.js') ||
+        errorMessage.includes('logout') ||
+        errorMessage.includes('unlink') ||
+        errorMessage.includes('rmSync') ||
+        errorMessage.includes('chrome_debug.log') ||
+        errorMessage.includes('Cookies-journal') ||
+        errorMessage.includes('Cookies') ||
+        errorMessage.includes('Default') ||
+        errorMessage.includes('Target closed') ||
+        errorMessage.includes('Protocol error') ||
+        errorMessage.includes('Session closed') ||
+        errorMessage.includes('Browser closed') ||
+        errorMessage.includes('Navigation failed') ||
+        errorMessage.includes('Execution context was destroyed') ||
+        errorMessage.includes('Page closed')
+      ) {
+        // ✅ Silent - these are non-critical errors from file cleanup during logout
         return;
       }
-      console.error('Uncaught Exception:', error);
+      
+      console.error('Uncaught Exception:', errorMessage);
     });
   }
 
   // Check if current time is within working hours
   async isWithinWorkingHours(userId) {
     try {
-      const settings = await BotSettings.findOne({ where: { userId } });
+      // ✅ Cache settings to prevent repeated DB queries
+      const cacheKey = `settings_${userId}`;
+      let settings = this.settingsCache.get(cacheKey);
+      
+      if (!settings || Date.now() - settings.timestamp > 60000) {
+        // Cache for 1 minute
+        settings = await BotSettings.findOne({ where: { userId } });
+        this.settingsCache.set(cacheKey, { data: settings, timestamp: Date.now() });
+      } else {
+        settings = settings.data;
+      }
       
       if (!settings || !settings.workingHoursEnabled) {
         return { isWorkingHours: true, message: null };
@@ -156,11 +219,10 @@ class WhatsAppService {
 
   async startSession(userId, options = {}) {
     try {
-      console.log(`[WA] 🚀 startSession called for user ${userId}`);
+      // ✅ Removed excessive logging to prevent connection issues
       
       // CRITICAL: Check if initialization is already in progress
       if (this.initializationLocks.has(userId)) {
-        console.log(`[WA] ⚠️ BLOCKED: Initialization already in progress for user ${userId}`);
         return {
           success: true,
           message: 'WhatsApp session is already initializing',
@@ -171,7 +233,6 @@ class WhatsAppService {
       
       // SET LOCK immediately to prevent concurrent calls
       this.initializationLocks.set(userId, true);
-      console.log(`[WA] 🔒 Lock SET for user ${userId}`);
       
       // Explicitly clear stopped flag when starting
       const prev = this.userStates.get(userId) || {};
@@ -180,7 +241,6 @@ class WhatsAppService {
 
       // Check if user already has an active session
       if (this.userClients.has(userId)) {
-        console.log(`[WA] User ${userId} already has a client - returning existing session`);
         // DISABLED state check - may cause LOGOUT
         // Just return that session exists
         this.initializationLocks.delete(userId);
@@ -199,7 +259,34 @@ class WhatsAppService {
       // Create WhatsApp client with FIXED session ID (no timestamp!)
       // Using timestamp creates NEW device each time → WhatsApp logs out old sessions!
       const sessionId = `user_${userId}`;
-      console.log(`[WA] 📱 Creating client with FIXED session ID: ${sessionId}`);
+      
+      // ✅ Clean up old session files if marked for cleanup (from previous LOGOUT)
+      const state = this.userStates.get(userId) || {};
+      if (state.needsCleanup) {
+        // Delay cleanup slightly to ensure Chrome/Puppeteer has released file locks
+        setTimeout(() => {
+          try {
+            const waAuthDir = './data/wa-auth';
+            if (fs.existsSync(waAuthDir)) {
+              const entries = fs.readdirSync(waAuthDir);
+              entries.forEach(entry => {
+                if (entry.includes(`user_${userId}`) || entry.startsWith(`session-user_${userId}`)) {
+                  const sessionPath = path.join(waAuthDir, entry);
+                  try {
+                    fs.rmSync(sessionPath, { recursive: true, force: true });
+                  } catch (err) {
+                    // Silent - ignore if still locked
+                  }
+                }
+              });
+            }
+            state.needsCleanup = false;
+            this.userStates.set(userId, state);
+          } catch (error) {
+            // Silent - non-critical
+          }
+        }, 5000); // Wait 5 seconds for file locks to release
+      }
       
       // 🔥 OPTIMIZED CLIENT - أفضل إعدادات للاستقرار
       const client = new Client({
@@ -242,19 +329,16 @@ class WhatsAppService {
           qrCodeData = await QRCode.toDataURL(qr);
           this.qrCodes.set(userId, qrCodeData);
           
-          // Also generate terminal QR for debugging
-          console.log(`\n[WA] QR Code for user ${userId}:`);
+          // ✅ Only show QR in terminal (silent mode to reduce logs)
           qrcode.generate(qr, { small: true });
-          
-          console.log(`QR Code generated for user ${userId}`);
         } catch (err) {
-          console.error('QR Code generation failed:', err);
+          console.error('[WA] QR Code generation failed:', err);
         }
       });
 
       // Use 'once' to ensure these events fire only ONCE per client lifecycle
       client.once('ready', async () => {
-        console.log(`[WA] ✅ WhatsApp client ready for user ${userId}`);
+        // ✅ Silent mode - removed logging to prevent connection issues
         this.userClients.set(userId, client);
         const s = this.userStates.get(userId) || {};
         s.initializing = false;
@@ -264,11 +348,16 @@ class WhatsAppService {
         // Clear QR code once connected
         this.qrCodes.delete(userId);
         
+        // ✅ Clear all caches when ready to force fresh data
+        this.statusCache.delete(`status_${userId}`);
+        this.userCache.delete(`user_${userId}`);
+        this.settingsCache.delete(`settings_${userId}`);
+        this.knowledgeBaseCache.delete(`kb_${userId}`);
+        
         // RELEASE LOCK when ready
         this.initializationLocks.delete(userId);
-        console.log(`[WA] 🔓 Lock RELEASED for user ${userId} (ready)`);
         
-        // 🤖 INJECT ANTI-DETECTION SCRIPT
+        // 🤖 INJECT ANTI-DETECTION SCRIPT (silent)
         try {
           const pages = await client.pupBrowser.pages();
           const page = pages[0];
@@ -288,21 +377,15 @@ class WhatsAppService {
                   Promise.resolve({ state: Notification.permission }) :
                   originalQuery(parameters)
               );
-              
-              console.log('[WA] 🤖 Anti-detection injected successfully');
             });
-            console.log(`[WA] 🤖 Anti-detection script injected for user ${userId}`);
           }
         } catch (antiDetectErr) {
-          console.log(`[WA] ⚠️ Could not inject anti-detection (non-critical): ${antiDetectErr.message}`);
+          // Silent - non-critical
         }
-        
-        console.log(`[WA] Session successfully established for user ${userId}`);
-        console.log(`[WA] ✅ Keep-alive DISABLED - الاتصال سيبقى بدون تدخل`);
       });
 
       client.once('authenticated', () => {
-        console.log(`[WA] 🔐 WhatsApp client authenticated for user ${userId}`);
+        // ✅ Silent mode
       });
 
       client.once('auth_failure', (msg) => {
@@ -315,29 +398,47 @@ class WhatsAppService {
         
         // RELEASE LOCK on auth failure
         this.initializationLocks.delete(userId);
-        console.log(`[WA] 🔓 Lock RELEASED for user ${userId} (auth_failure)`);
       });
 
       // Use 'once' to ensure disconnection handler fires only ONCE
-      client.once('disconnected', (reason) => {
-        console.log(`[WA] ⚠️ WhatsApp client disconnected for user ${userId}:`, reason);
-        
+      client.once('disconnected', async (reason) => {
         // ⚠️ معالجة خاصة للـ LOGOUT - واتساب كشف الأتمتة
         if (reason === 'LOGOUT') {
-          console.error(`[WA] 🚨 CRITICAL: WhatsApp detected automation for user ${userId}!`);
-          console.error(`[WA] 💡 Solution: Run 'node cleanup-sessions.js' and scan QR again`);
-          console.error(`[WA] 💡 Keep WhatsApp open on phone for 3-5 minutes after scanning`);
+          console.error(`[WA] CRITICAL: WhatsApp LOGOUT for user ${userId}`);
           
-          // حذف session files تلقائياً عند LOGOUT
-          this.cleanupSessionFilesOnLogout(userId);
+          // ✅ SAFE CLEANUP: Close browser first to release file locks
+          try {
+            const client = this.userClients.get(userId);
+            if (client && client.pupBrowser) {
+              // Close browser pages first
+              const pages = await client.pupBrowser.pages();
+              for (const page of pages) {
+                try {
+                  await page.close().catch(() => {});
+                } catch (e) {}
+              }
+              // Close browser gracefully
+              await client.pupBrowser.close().catch(() => {});
+              // Wait a bit for file locks to release
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          } catch (e) {
+            // Silent - non-critical
+          }
+          
+          // ✅ Now mark for cleanup (files will be removed on next start)
+          try {
+            const state = this.userStates.get(userId) || {};
+            state.needsCleanup = true;
+            this.userStates.set(userId, state);
+          } catch (e) {}
         }
         
         this.handleDisconnection(userId, reason);
       });
 
-      client.on('change_state', (state) => {
-        console.log(`[WA] state changed for user ${userId}:`, state);
-      });
+      // ✅ Removed state change logging (too frequent)
+      // client.on('change_state', (state) => {});
 
       // Enhanced message handling with auto-response
       client.on('message', async (message) => {
@@ -371,12 +472,10 @@ class WhatsAppService {
         } catch {}
         
         if (message.body === 'ping') {
-          console.log(`[WA] Ping message received from ${message.from}, ignoring`);
-          return;
+          return; // ✅ Silent - ignore ping
         }
         
-        console.log(`[WA] message from ${message.from}:`, message.body?.slice(0, 80));
-        
+        // ✅ Removed message logging (too frequent)
         try {
           await this.handleIncomingMessage(message, userId);
         } catch (error) {
@@ -386,7 +485,7 @@ class WhatsAppService {
 
       // Initialize the client with error handling and timeout
       try {
-        console.log(`[WA] 🚀 Calling client.initialize() for user ${userId}...`);
+        // ✅ Silent initialization
         
         // Add timeout to prevent hanging
         const initPromise = client.initialize();
@@ -395,15 +494,31 @@ class WhatsAppService {
         );
         
         await Promise.race([initPromise, timeoutPromise]);
-        console.log(`[WA] ✅ Client initialized successfully for user ${userId}`);
       } catch (initError) {
-        console.error(`[WA] ❌ Client initialization failed for user ${userId}:`, initError.message);
+        console.error(`[WA] Client initialization failed for user ${userId}:`, initError.message);
         this.userStates.set(userId, { initializing: false, reconnecting: false });
         this.initializationLocks.delete(userId);
         
-        // Clean up failed client
+        // ✅ SAFE CLEANUP: Close browser first, then destroy client
         try {
           client.removeAllListeners();
+          
+          // Close browser pages and browser first to release file locks
+          if (client.pupBrowser) {
+            try {
+              const pages = await client.pupBrowser.pages();
+              for (const page of pages) {
+                try {
+                  await page.close().catch(() => {});
+                } catch (e) {}
+              }
+              await client.pupBrowser.close().catch(() => {});
+              // Wait for file locks to release
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (e) {}
+          }
+          
+          // Now destroy client (this may try to logout, but browser is closed)
           await client.destroy().catch(() => {});
         } catch (e) {}
         
@@ -428,7 +543,6 @@ class WhatsAppService {
       
       // RELEASE LOCK on error
       this.initializationLocks.delete(userId);
-      console.log(`[WA] 🔓 Lock RELEASED for user ${userId} (error)`);
       
       return {
         success: false,
@@ -440,10 +554,10 @@ class WhatsAppService {
 
   setupKeepAlive(userId, client) {
     // ✅ SAFE Keep-alive using sendPresenceAvailable instead of getState
+    // ✅ SILENT mode - no logging to prevent connection issues
     const keepAliveInterval = setInterval(async () => {
       try {
         if (!this.userClients.has(userId)) {
-          console.log(`[WA] Client no longer exists for user ${userId}, stopping keep-alive`);
           clearInterval(keepAliveInterval);
           return;
         }
@@ -452,16 +566,12 @@ class WhatsAppService {
           try {
             // ✅ استخدام sendPresenceAvailable بدلاً من getState - أكثر أماناً!
             await client.sendPresenceAvailable();
-            const messageCount = this.messageCounters.get(userId) || 0;
-            console.log(`[WA] 💚 Keep-alive ping sent for user ${userId} (${messageCount} messages)`);
           } catch (presenceError) {
             // إذا فشل presence، معناه الاتصال انقطع
-            console.log(`[WA] ⚠️ Keep-alive failed for user ${userId}, may be disconnected`);
             clearInterval(keepAliveInterval);
           }
         }
       } catch (error) {
-        console.log(`[WA] Keep-alive error for user ${userId}:`, error.message);
         clearInterval(keepAliveInterval);
       }
     }, 50000); // ✅ كل 50 ثانية بدلاً من 10 - أقل تطفلاً
@@ -473,14 +583,18 @@ class WhatsAppService {
   }
 
   handleDisconnection(userId, reason) {
-    console.log(`[WA] 🔌 handleDisconnection called for user ${userId}, reason:`, reason);
-    
+    // ✅ Silent mode - only log critical errors
     this.userClients.delete(userId);
     this.qrCodes.delete(userId);
     
+    // ✅ Clear all caches on disconnection
+    this.statusCache.delete(`status_${userId}`);
+    this.userCache.delete(`user_${userId}`);
+    this.settingsCache.delete(`settings_${userId}`);
+    this.knowledgeBaseCache.delete(`kb_${userId}`);
+    
     // RELEASE LOCK on disconnection
     this.initializationLocks.delete(userId);
-    console.log(`[WA] 🔓 Lock RELEASED for user ${userId} (disconnected)`);
     
     // Clean up conversation locks and message times for this user
     this.cleanupUserConversations(userId);
@@ -488,8 +602,6 @@ class WhatsAppService {
     const s = this.userStates.get(userId) || {};
     s.initializing = false;
     s.ready = false;
-    // If the session was explicitly stopped, do not auto-reconnect
-    const shouldStayStopped = Boolean(s.stopped);
     
     // Clear keep-alive interval
     if (s.keepAliveInterval) {
@@ -499,17 +611,11 @@ class WhatsAppService {
     
     this.userStates.set(userId, s);
     
-    // NO AUTO-RECONNECT - User must manually reconnect
-    console.log(`[WA] Session disconnected for user ${userId}. Manual reconnection required.`);
-    
     // Clear reconnecting flag
     const state = this.userStates.get(userId) || {};
     state.reconnecting = false;
     state.stopped = false; // Reset stopped flag to allow manual reconnect
     this.userStates.set(userId, state);
-    
-    // DON'T clean up session files - let them persist for reconnection!
-    console.log(`[WA] Session files preserved for future reconnection`);
   }
 
   cleanupSessionFiles(userId) {
@@ -535,36 +641,20 @@ class WhatsAppService {
   }
 
   // ⚠️ تنظيف شامل عند LOGOUT - حذف كل session files للمستخدم
+  // ✅ DISABLED: لا نحاول حذف الملفات مباشرة عند LOGOUT
+  // لأن Client.js يحاول حذفها تلقائياً وملفات Chrome/Puppeteer تكون مقفلة
+  // هذا يسبب EBUSY errors. بدلاً من ذلك، الملفات ستنظف تلقائياً عند الجلسة القادمة
   cleanupSessionFilesOnLogout(userId) {
+    // ✅ Silent cleanup - don't try to delete locked files
+    // Files will be cleaned up automatically on next session start if needed
+    // Trying to delete them here causes EBUSY errors because Chrome/Puppeteer has them locked
     try {
-      const sessionId = `user_${userId}`;
-      const authPaths = [
-        './data/wa-auth',
-        './.wwebjs_auth'
-      ];
-      
-      authPaths.forEach(authDir => {
-        if (fs.existsSync(authDir)) {
-          const entries = fs.readdirSync(authDir);
-          entries.forEach(entry => {
-            // حذف أي session يخص هذا المستخدم
-            if (entry.includes(sessionId) || entry.startsWith(`session-${sessionId}`)) {
-              const sessionPath = path.join(authDir, entry);
-              try {
-                console.log(`[WA] 🗑️ Removing corrupted session: ${entry}`);
-                fs.rmSync(sessionPath, { recursive: true, force: true, maxRetries: 3 });
-                console.log(`[WA] ✅ Removed: ${entry}`);
-              } catch (err) {
-                if (err.code === 'EBUSY' || err.code === 'EPERM') {
-                  console.log(`[WA] ⚠️ Could not remove ${entry} (file locked). Run cleanup-sessions.js manually.`);
-                }
-              }
-            }
-          });
-        }
-      });
+      // Just mark session as needing cleanup - actual cleanup will happen on next start
+      const state = this.userStates.get(userId) || {};
+      state.needsCleanup = true;
+      this.userStates.set(userId, state);
     } catch (error) {
-      console.error(`[WA] Error cleaning up session files for user ${userId}:`, error.message);
+      // Silent - non-critical
     }
   }
 
@@ -574,8 +664,7 @@ class WhatsAppService {
     try {
       // Validate input parameters
       if (!message || !userId || !message.from) {
-        console.log('[WA] Invalid message or userId, skipping processing');
-        return;
+        return; // ✅ Silent
       }
       
       // Create a unique conversation key
@@ -584,15 +673,13 @@ class WhatsAppService {
       
       // Check if we're already processing a message for this conversation
       if (this.conversationLocks.has(conversationKey)) {
-        console.log(`[WA] Conversation ${conversationKey} is already being processed, ignoring duplicate message`);
-        return;
+        return; // ✅ Silent
       }
       
       // Check for rapid successive messages (within 3 seconds)
       const lastTime = this.lastMessageTime.get(conversationKey) || 0;
       if (now - lastTime < 3000) {
-        console.log(`[WA] Rapid successive message from ${conversationKey}, ignoring to prevent spam`);
-        return;
+        return; // ✅ Silent
       }
       
       // Update last message time
@@ -606,31 +693,37 @@ class WhatsAppService {
         this.conversationLocks.delete(conversationKey);
       }, 5000);
       
-      console.log(`[WA] Processing message from ${message.from}: ${message.body}`);
-      
       // Always save incoming message first, regardless of bot status
       await conversationService.saveMessage(userId, message.from, 'incoming', message.body);
       
-      // Check if bot is paused for this user
-      const user = await User.findByPk(userId);
+      // ✅ Cache user data to prevent repeated DB queries
+      const userCacheKey = `user_${userId}`;
+      let userData = this.userCache.get(userCacheKey);
+      
+      if (!userData || Date.now() - userData.timestamp > 30000) {
+        // Cache for 30 seconds
+        const user = await User.findByPk(userId);
+        userData = { data: user, timestamp: Date.now() };
+        this.userCache.set(userCacheKey, userData);
+      }
+      
+      const user = userData.data;
       if (user && user.botPaused) {
         // Check if pause has expired
         if (user.botPausedUntil && new Date() > user.botPausedUntil) {
           // Resume bot
           await user.update({ botPaused: false, botPausedUntil: null });
-          console.log(`[WA] Bot resumed for user ${userId} - pause expired`);
         } else {
           // Bot is still paused, don't respond but message is already saved
-          console.log(`[WA] Bot is paused for user ${userId}, message saved but no response sent to ${message.from}`);
           this.conversationLocks.delete(conversationKey);
-          return;
+          return; // ✅ Silent
         }
       }
 
       // Check working hours
       const workingHoursCheck = await this.isWithinWorkingHours(userId);
       if (!workingHoursCheck.isWorkingHours) {
-        console.log(`[WA] Outside working hours for user ${userId}, sending message: ${workingHoursCheck.message}`);
+        // ✅ Silent
         // Send outside working hours message
         const client = this.userClients.get(userId);
         if (client) {
@@ -679,15 +772,12 @@ class WhatsAppService {
       
       // First, try dynamic BotData search with Fuse.js, then OpenAI fallback inside the service
       try {
-        console.log(`[WA] BotData search start for user ${userId}...`);
+        // ✅ Silent mode - removed logging
         const result = await searchOrAnswer(userId, message.body, 0.5, 3, message.from, null);
-        console.log(`[WA] BotData search result source=`, result?.source, ' hasMatches=', Array.isArray(result?.matches) && result.matches.length);
         if (result?.source === 'fuse' && Array.isArray(result.matches) && result.matches.length) {
           // Format top match into a comprehensive, organized product details
           const top = result.matches[0];
           const data = top.data || {};
-          
-          console.log(`[WA] BotData match found:`, data);
           
           // Try to find relevant fields with better field matching
           const name = data['اسم_المنتج'] || data['product_name'] || data['name'] || data['الاسم'] || data['اسم'] || '';
@@ -722,43 +812,47 @@ class WhatsAppService {
           response = productDetails;
           responseSource = 'knowledge_base';
           knowledgeBaseMatch = name || 'منتج';
-          console.log(`[WA] BotData match used for user ${userId}`);
         } else if (result?.source === 'direct' && result.answer) {
           response = result.answer;
           responseSource = 'knowledge_base';
-          console.log('[WA] Direct intent answer used');
         } else if (result?.source === 'summary' && result.answer) {
           response = `أكيد! هذه نظرة سريعة على بعض المنتجات لدينا 👇\n${result.answer}`;
           responseSource = 'knowledge_base';
-          console.log('[WA] BotData summary used');
         } else if (result?.source === 'small_talk' && result.answer) {
           response = result.answer;
           responseSource = 'small_talk';
-          console.log('[WA] Small talk used');
         } else if (result?.source === 'openai' && result.answer) {
           response = result.answer;
           responseSource = 'openai';
-          console.log('[WA] OpenAI fallback answer used');
         } else if (result?.source === 'gemini' && result.answer) {
           response = result.answer;
           responseSource = 'gemini';
-          console.log('[WA] Gemini fallback answer used');
         }
       } catch (e) {
-        console.log('[WA] searchOrAnswer failed, will continue with legacy KB/OpenAI flow');
+        // ✅ Silent - continue with fallback
       }
 
       // If still no response, try legacy knowledge base
       if (!response) {
-        const knowledgeEntries = await KnowledgeBase.findAll({ where: { userId, isActive: true } });
+        // ✅ Cache knowledge base to prevent repeated DB queries
+        const kbCacheKey = `kb_${userId}`;
+        let kbData = this.knowledgeBaseCache.get(kbCacheKey);
+        
+        if (!kbData || Date.now() - kbData.timestamp > 120000) {
+          // Cache for 2 minutes
+          const knowledgeEntries = await KnowledgeBase.findAll({ where: { userId, isActive: true } });
+          kbData = { data: knowledgeEntries, timestamp: Date.now() };
+          this.knowledgeBaseCache.set(kbCacheKey, kbData);
+        }
+        
+        const knowledgeEntries = kbData.data;
         if (knowledgeEntries.length > 0) {
           const fuse = new Fuse(knowledgeEntries, { keys: ['keyword'], threshold: 0.6, includeScore: true });
           const results = fuse.search(message.body);
-        if (results.length > 0 && results[0].score < 0.6) {
+          if (results.length > 0 && results[0].score < 0.6) {
           response = results[0].item.answer;
           responseSource = 'knowledge_base';
           knowledgeBaseMatch = results[0].item.keyword;
-            console.log(`[WA] Found legacy knowledge base match: ${results[0].item.keyword}`);
           }
         }
       }
@@ -766,8 +860,16 @@ class WhatsAppService {
       // If still nothing, final LLM fallback: OpenAI then Gemini
       if (!response) {
         try {
-          // Get user bot settings for personalized responses
-          const userSettings = await BotSettings.findOne({ where: { userId } });
+          // ✅ Use cached settings instead of querying again
+          const cacheKey = `settings_${userId}`;
+          let settingsData = this.settingsCache.get(cacheKey);
+          
+          if (!settingsData || Date.now() - settingsData.timestamp > 60000) {
+            settingsData = { data: await BotSettings.findOne({ where: { userId } }), timestamp: Date.now() };
+            this.settingsCache.set(cacheKey, settingsData);
+          }
+          
+          const userSettings = settingsData.data;
           
           // Build system prompt based on user settings
           let systemPrompt = "أنت مساعد ذكي لخدمة العملاء.";
@@ -847,23 +949,25 @@ class WhatsAppService {
 
       // Final fallback response (no echo)
       if (!response) {
-        console.warn('[WA] No LLM available or no data match; sending neutral fallback');
+        // ✅ Silent fallback
         response = 'أعتذر، لم أستطع توليد إجابة الآن.';
         responseSource = 'fallback';
       }
 
-      // Send response (with 3s delay) and log it
+      // Send response (with variable delay) and log it
       if (response) {
         // Check limits before sending bot response
         const limitCheck = await limitService.canSendMessage(userId, 'whatsapp');
         if (!limitCheck.canSend) {
-          console.log(`[WA] Bot response blocked due to limit: ${limitCheck.reason}`);
-          // Don't send response if limit reached
+          // ✅ Silent - limit reached
           return;
         }
 
-        // Delay 3 seconds before replying
-        await new Promise(r => setTimeout(r, 3000));
+        // ✅ Add variable delay (3-6 seconds) to make responses look more natural and human-like
+        const baseDelay = 3000; // 3 seconds base
+        const variation = 3000; // ±3 seconds variation
+        const randomDelay = baseDelay + Math.random() * variation; // 3-6 seconds
+        await new Promise(r => setTimeout(r, Math.round(randomDelay)));
         const sendResult = await this.sendMessage(userId, message.from, response);
         
         // Only record usage if message was sent successfully
@@ -875,7 +979,7 @@ class WhatsAppService {
             responseSource: responseSource,
             contactNumber: message.from
           });
-          console.log(`[WA] Bot response recorded in usage stats for user ${userId}`);
+          // ✅ Silent
         }
       }
 
@@ -986,7 +1090,7 @@ class WhatsAppService {
       // Send the message
       await client.sendMessage(chatId, messageText);
       
-      console.log(`[WA] Sent template with ${template.buttons?.length || 0} buttons to ${contactNumber}`);
+      // ✅ Silent
       return true;
     } catch (error) {
       console.error('[WA] Error sending template with buttons:', error);
@@ -1082,19 +1186,16 @@ class WhatsAppService {
       // Check message limits first
       const limitCheck = await limitService.canSendMessage(userId, 'whatsapp');
       if (!limitCheck.canSend) {
-        console.log(`[WA] Message limit reached for user ${userId}: ${limitCheck.reason}`);
         return { success: false, error: limitCheck.reason, limitReached: true };
       }
 
       const client = this.userClients.get(userId);
       if (!client) {
-        console.log(`[WA] No client available for user ${userId}`);
-        return false;
+        return false; // ✅ Silent
       }
 
       // DISABLED state check - may cause LOGOUT issues
       // Just attempt to send directly
-      console.log(`[WA] Sending message for user ${userId} without state check`);
 
       // Resolve destination chat id
       let chatId = to;
@@ -1152,38 +1253,67 @@ class WhatsAppService {
   }
 
   async getStatus(userId) {
+    // ✅ CRITICAL: Cache status to prevent repeated getState() calls that cause disconnections
+    const cacheKey = `status_${userId}`;
+    const cached = this.statusCache.get(cacheKey);
+    
+    // Cache for 10 seconds - prevents excessive getState() calls
+    if (cached && Date.now() - cached.timestamp < 10000) {
+      return cached.data;
+    }
+
     const client = this.userClients.get(userId);
     const state = this.userStates.get(userId);
 
     if (!client) {
-      return {
+      const result = {
         success: true,
         status: 'disconnected',
         message: 'No active WhatsApp session'
       };
+      // Cache disconnected status for 5 seconds
+      this.statusCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      return result;
     }
 
     try {
-      const clientState = await client.getState();
-      return {
+      // ✅ ONLY call getState() if state is not already known as ready
+      // This prevents repeated expensive calls that can cause disconnection
+      let clientState;
+      if (state?.ready) {
+        // If we know it's ready, don't call getState() - just use cached state
+        clientState = 'CONNECTED';
+      } else {
+        // Only call getState() if not ready (less frequent)
+        clientState = await client.getState();
+      }
+      
+      const result = {
         success: true,
         status: clientState,
         message: clientState === 'CONNECTED' ? 'WhatsApp session is active' : 'WhatsApp session is not ready',
         initializing: state?.initializing || false
       };
+      
+      // Cache the result for 10 seconds
+      this.statusCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      return result;
     } catch (error) {
-      return {
+      const result = {
         success: true,
         status: 'error',
         message: 'Could not determine WhatsApp session status',
         error: error.message
       };
+      // Cache error for 5 seconds
+      this.statusCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      return result;
     }
   }
 
   async getQRCode(userId) {
+    // ✅ No logging - silent mode
     const qrCode = this.qrCodes.get(userId);
-    console.log(`[WA] getQRCode for user ${userId}:`, qrCode ? 'QR EXISTS' : 'NO QR');
     
     if (qrCode) {
       return {
@@ -1238,7 +1368,26 @@ class WhatsAppService {
 
       const client = this.userClients.get(userId);
       if (client) {
-        await client.destroy();
+        // ✅ SAFE CLEANUP: Close browser first to release file locks
+        try {
+          if (client.pupBrowser) {
+            try {
+              const pages = await client.pupBrowser.pages();
+              for (const page of pages) {
+                try {
+                  await page.close().catch(() => {});
+                } catch (e) {}
+              }
+              await client.pupBrowser.close().catch(() => {});
+              // Wait for file locks to release
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (e) {}
+          }
+          // Now destroy client (this may try to logout, but browser is closed)
+          await client.destroy().catch(() => {});
+        } catch (e) {
+          // Silent - non-critical
+        }
       }
       
       this.userClients.delete(userId);
@@ -1514,45 +1663,63 @@ class WhatsAppService {
         return { success: false, message: limitCheck.reason, limitReached: true };
       }
       
+      // ✅ Ensure minimum throttle is 5 seconds for campaigns (safer for spam detection)
+      const minThrottle = Math.max(throttleMs, 5000);
+      
       let sent = 0, failed = 0;
-      for (const row of rows) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
         const raw = String(row.phone || row.number || '').replace(/\D/g, '');
         if (!raw) { failed++; continue; }
+        
+        // ✅ Add random variation to throttle (base ± 30%) to make it look more natural
+        const variation = minThrottle * 0.3; // 30% variation
+        const randomThrottle = minThrottle + (Math.random() * 2 - 1) * variation; // ±30%
+        const actualThrottle = Math.max(4000, randomThrottle); // Minimum 4 seconds
+        
         const personalized = String(row.message || messageTemplate || '').replace(/\{\{name\}\}/gi, row.name || '');
         let ok = false;
-        if (media && media.buffer) {
-          const chatId = raw.endsWith('@c.us') ? raw : `${raw}@c.us`;
-          const base64 = media.buffer.toString('base64');
-          // Properly detect MIME type for images
-          let mimeType = media.mimetype || 'application/octet-stream';
-          if (media.filename) {
-            const ext = media.filename.toLowerCase().split('.').pop();
-            if (['jpg', 'jpeg'].includes(ext)) mimeType = 'image/jpeg';
-            else if (ext === 'png') mimeType = 'image/png';
-            else if (ext === 'gif') mimeType = 'image/gif';
-            else if (ext === 'webp') mimeType = 'image/webp';
-            else if (['mp4', 'mov'].includes(ext)) mimeType = 'video/mp4';
-            else if (ext === 'avi') mimeType = 'video/avi';
-            else if (ext === 'mkv') mimeType = 'video/mkv';
-          }
-          const msgMedia = new MessageMedia(mimeType, base64, media.filename || 'file');
-          try {
+        
+        try {
+          if (media && media.buffer) {
+            const chatId = raw.endsWith('@c.us') ? raw : `${raw}@c.us`;
+            const base64 = media.buffer.toString('base64');
+            // Properly detect MIME type for images
+            let mimeType = media.mimetype || 'application/octet-stream';
+            if (media.filename) {
+              const ext = media.filename.toLowerCase().split('.').pop();
+              if (['jpg', 'jpeg'].includes(ext)) mimeType = 'image/jpeg';
+              else if (ext === 'png') mimeType = 'image/png';
+              else if (ext === 'gif') mimeType = 'image/gif';
+              else if (ext === 'webp') mimeType = 'image/webp';
+              else if (['mp4', 'mov'].includes(ext)) mimeType = 'video/mp4';
+              else if (ext === 'avi') mimeType = 'video/avi';
+              else if (ext === 'mkv') mimeType = 'video/mkv';
+            }
+            const msgMedia = new MessageMedia(mimeType, base64, media.filename || 'file');
             await client.sendMessage(chatId, msgMedia, { caption: personalized || '' });
             ok = true;
-          } catch (e) {
-            ok = false;
+          } else {
+            ok = await this.sendMessage(userId, raw, personalized || '');
           }
-        } else {
-          ok = await this.sendMessage(userId, raw, personalized || '');
-        }
-        if (ok) {
-          sent++;
-          // Record message usage for campaign
-          await limitService.recordMessageUsage(userId, 'whatsapp', 'campaign', 1);
-        } else {
+          
+          if (ok) {
+            sent++;
+            // Record message usage for campaign
+            await limitService.recordMessageUsage(userId, 'whatsapp', 'campaign', 1);
+          } else {
+            failed++;
+          }
+        } catch (e) {
+          console.log(`[WA] Campaign send error for ${raw}:`, e?.message || e);
           failed++;
         }
-        await new Promise(r => setTimeout(r, throttleMs));
+        
+        // ✅ Wait with variation before next message (except for last message)
+        if (i < rows.length - 1) {
+          await new Promise(r => setTimeout(r, Math.round(actualThrottle)));
+          console.log(`[WA] Campaign throttle: ${Math.round(actualThrottle)}ms (${i + 1}/${rows.length})`);
+        }
       }
       return { success: true, summary: { sent, failed, total: rows.length } };
     } catch (e) {

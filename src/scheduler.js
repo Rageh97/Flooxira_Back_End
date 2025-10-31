@@ -1738,7 +1738,15 @@ function startScheduler() {
       if (dueReminders.length > 0) {
         console.log(`[Scheduler] Found ${dueReminders.length} due reminders`);
         
-        for (const reminder of dueReminders) {
+        // ✅ Process reminders with delay between each to avoid spam patterns
+        for (let i = 0; i < dueReminders.length; i++) {
+          const reminder = dueReminders[i];
+          
+          // ✅ Add delay between processing different reminders (5-8 seconds)
+          if (i > 0) {
+            const delayBetweenReminders = 5000 + Math.random() * 3000; // 5-8 seconds
+            await new Promise(resolve => setTimeout(resolve, delayBetweenReminders));
+          }
           try {
             const needSendFirst = !reminder.sentAt1 && new Date(reminder.reminderTime1) <= now;
             const needSendSecond = !reminder.sentAt2 && new Date(reminder.reminderTime2) <= now;
@@ -1753,6 +1761,10 @@ function startScheduler() {
                 console.log(`⚠️ [Scheduler] Skipping reminder ${reminder.id} - No active WhatsApp session for user ${reminder.userId}`);
                 continue;
               }
+              
+              // ✅ Add delay before sending (3-5 seconds random) to avoid spam patterns
+              const delay = 3000 + Math.random() * 2000;
+              await new Promise(resolve => setTimeout(resolve, delay));
               
               const message = `⏰ تذكير قبل ساعتين:\n${reminder.message}`;
               
@@ -1781,6 +1793,10 @@ function startScheduler() {
                 console.log(`⚠️ [Scheduler] Skipping reminder ${reminder.id} - No active WhatsApp session for user ${reminder.userId}`);
                 continue;
               }
+              
+              // ✅ Add delay before sending (3-5 seconds random) to avoid spam patterns
+              const delay = 3000 + Math.random() * 2000;
+              await new Promise(resolve => setTimeout(resolve, delay));
               
               const message = `⏰ تذكير قبل ساعة واحدة:\n${reminder.message}`;
               

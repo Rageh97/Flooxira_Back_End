@@ -688,7 +688,11 @@ class BaileysService {
           return;
         }
 
-        await delay(3000);
+        // ✅ Add variable delay (3-6 seconds) to make responses look more natural
+        const baseDelay = 3000;
+        const variation = 3000;
+        const randomDelay = baseDelay + Math.random() * variation;
+        await delay(Math.round(randomDelay));
         const sendResult = await this.sendMessage(userId, from, response);
         
         if (sendResult === true) {
@@ -1101,10 +1105,19 @@ class BaileysService {
         return { success: false, message: limitCheck.reason, limitReached: true };
       }
       
+      // ✅ Ensure minimum throttle is 5 seconds for campaigns (safer for spam detection)
+      const minThrottle = Math.max(throttleMs, 5000);
+      
       let sent = 0, failed = 0;
-      for (const row of rows) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
         const raw = String(row.phone || row.number || '').replace(/\D/g, '');
         if (!raw) { failed++; continue; }
+        
+        // ✅ Add random variation to throttle (base ± 30%) to make it look more natural
+        const variation = minThrottle * 0.3; // 30% variation
+        const randomThrottle = minThrottle + (Math.random() * 2 - 1) * variation; // ±30%
+        const actualThrottle = Math.max(4000, randomThrottle); // Minimum 4 seconds
         
         const personalized = String(row.message || messageTemplate || '').replace(/\{\{name\}\}/gi, row.name || '');
         const jid = `${raw}@s.whatsapp.net`;
@@ -1123,6 +1136,7 @@ class BaileysService {
             ok = true;
           }
         } catch (e) {
+          console.log(`[Baileys] Campaign send error for ${raw}:`, e?.message || e);
           ok = false;
         }
         
@@ -1132,7 +1146,12 @@ class BaileysService {
         } else {
           failed++;
         }
-        await delay(throttleMs);
+        
+        // ✅ Wait with variation before next message (except for last message)
+        if (i < rows.length - 1) {
+          await delay(Math.round(actualThrottle));
+          console.log(`[Baileys] Campaign throttle: ${Math.round(actualThrottle)}ms (${i + 1}/${rows.length})`);
+        }
       }
       return { success: true, summary: { sent, failed, total: rows.length } };
     } catch (e) {

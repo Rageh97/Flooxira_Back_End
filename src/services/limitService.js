@@ -112,18 +112,19 @@ class LimitService {
 
       const totalUsage = usage ? usage.count : 0;
 
-      console.log(`[Limit Service] ${platform} usage for user ${userId}: ${totalUsage} (${platform === 'whatsapp' ? 'bot responses only' : 'all messages'})`);
+      // ✅ Reduced logging - only log when not polling (reduce spam in logs)
+      // console.log(`[Limit Service] ${platform} usage for user ${userId}: ${totalUsage} (${platform === 'whatsapp' ? 'bot responses only' : 'all messages'})`);
       
-      // Log the query details for debugging
-      if (platform === 'whatsapp') {
-        console.log(`[Limit Service] WhatsApp query:`, {
-          userId,
-          platform,
-          messageType: 'bot_response',
-          month: currentMonth,
-          year: currentYear
-        });
-      }
+      // ✅ Removed query logging to reduce spam
+      // if (platform === 'whatsapp') {
+      //   console.log(`[Limit Service] WhatsApp query:`, {
+      //     userId,
+      //     platform,
+      //     messageType: 'bot_response',
+      //     month: currentMonth,
+      //     year: currentYear
+      //   });
+      // }
 
       // Cache the result
       this.userUsage.set(cacheKey, {

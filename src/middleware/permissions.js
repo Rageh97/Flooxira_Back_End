@@ -6,13 +6,18 @@ const { UserSubscription, Plan } = require('../models');
 const requireActiveSubscription = async (req, res, next) => {
   try {
     const userId = req.userId || req.user?.id;
-    console.log('[Active Subscription] Checking subscription for user:', userId);
+    // ✅ Reduced logging - only log when not polling status endpoint
+    const isStatusPolling = req.url && req.url.includes('/api/whatsapp/status');
+    if (!isStatusPolling) {
+      // console.log('[Active Subscription] Checking subscription for user:', userId);
+    }
     
     // إذا كان موظف، يتحقق من اشتراك المالك
     if (req.employeeId) {
       try {
         const ownerId = req.ownerId;
-        console.log('[Active Subscription] Employee case - checking owner subscription:', ownerId);
+        // ✅ Reduced logging
+        // console.log('[Active Subscription] Employee case - checking owner subscription:', ownerId);
         
         const subscription = await UserSubscription.findOne({
           where: {
@@ -31,15 +36,16 @@ const requireActiveSubscription = async (req, res, next) => {
           ]
         });
 
-        console.log('[Active Subscription] Employee - Found subscription:', subscription ? 'Yes' : 'No');
-        if (subscription) {
-          console.log('[Active Subscription] Employee - Subscription details:', {
-            id: subscription.id,
-            status: subscription.status,
-            expiresAt: subscription.expiresAt,
-            planName: subscription.plan?.name
-          });
-        }
+        // ✅ Reduced logging
+        // console.log('[Active Subscription] Employee - Found subscription:', subscription ? 'Yes' : 'No');
+        // if (subscription && !isStatusPolling) {
+        //   console.log('[Active Subscription] Employee - Subscription details:', {
+        //     id: subscription.id,
+        //     status: subscription.status,
+        //     expiresAt: subscription.expiresAt,
+        //     planName: subscription.plan?.name
+        //   });
+        // }
 
         if (!subscription) {
           // Set default permissions if no subscription found
@@ -52,7 +58,8 @@ const requireActiveSubscription = async (req, res, next) => {
             monthlyPosts: 10
           };
           
-          console.log('[Active Subscription] Employee - No subscription found, using default permissions:', req.userPermissions);
+          // ✅ Reduced logging
+          // console.log('[Active Subscription] Employee - No subscription found, using default permissions:', req.userPermissions);
           
           return next(); // Continue instead of returning error
         }
@@ -71,8 +78,9 @@ const requireActiveSubscription = async (req, res, next) => {
           req.employeePermissions = req.employee.permissions;
         }
         
-        console.log('[Active Subscription] Employee - User permissions:', req.userPermissions);
-        console.log('[Active Subscription] Employee - Employee permissions:', req.employeePermissions);
+        // ✅ Reduced logging
+        // console.log('[Active Subscription] Employee - User permissions:', req.userPermissions);
+        // console.log('[Active Subscription] Employee - Employee permissions:', req.employeePermissions);
         
         return next();
       } catch (employeeError) {
@@ -88,7 +96,8 @@ const requireActiveSubscription = async (req, res, next) => {
           monthlyPosts: 10
         };
         
-        console.log('[Active Subscription] Employee - Using default permissions due to error:', req.userPermissions);
+        // ✅ Reduced logging
+        // console.log('[Active Subscription] Employee - Using default permissions due to error:', req.userPermissions);
         
         return next(); // Continue instead of returning error
       }
@@ -112,15 +121,16 @@ const requireActiveSubscription = async (req, res, next) => {
       ]
     });
 
-    console.log('[Active Subscription] Found subscription:', subscription ? 'Yes' : 'No');
-    if (subscription) {
-      console.log('[Active Subscription] Subscription details:', {
-        id: subscription.id,
-        status: subscription.status,
-        expiresAt: subscription.expiresAt,
-        planName: subscription.plan?.name
-      });
-    }
+    // ✅ Reduced logging - only log when not polling status
+    // console.log('[Active Subscription] Found subscription:', subscription ? 'Yes' : 'No');
+    // if (subscription && !isStatusPolling) {
+    //   console.log('[Active Subscription] Subscription details:', {
+    //     id: subscription.id,
+    //     status: subscription.status,
+    //     expiresAt: subscription.expiresAt,
+    //     planName: subscription.plan?.name
+    //   });
+    // }
 
     if (!subscription) {
       // Set default permissions if no subscription found
@@ -133,7 +143,8 @@ const requireActiveSubscription = async (req, res, next) => {
         monthlyPosts: 10
       };
       
-      console.log('[Active Subscription] No subscription found, using default permissions:', req.userPermissions);
+      // ✅ Reduced logging
+      // console.log('[Active Subscription] No subscription found, using default permissions:', req.userPermissions);
       
       return next(); // Continue instead of returning error
     }
@@ -147,7 +158,10 @@ const requireActiveSubscription = async (req, res, next) => {
       req.userPermissions.canManageContent = true;
     }
     
-    console.log('[Active Subscription] User permissions:', req.userPermissions);
+    // ✅ Reduced logging - only log when not polling status
+    // if (!isStatusPolling) {
+    //   console.log('[Active Subscription] User permissions:', req.userPermissions);
+    // }
     
     next();
   } catch (error) {
@@ -167,7 +181,8 @@ const requireActiveSubscription = async (req, res, next) => {
       monthlyPosts: 10
     };
     
-    console.log('[Active Subscription] Using default permissions due to error:', req.userPermissions);
+    // ✅ Reduced logging
+    // console.log('[Active Subscription] Using default permissions due to error:', req.userPermissions);
     
     next(); // Continue instead of returning error
   }

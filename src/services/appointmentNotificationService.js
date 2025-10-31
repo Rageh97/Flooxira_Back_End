@@ -2,22 +2,58 @@ const { Appointment } = require('../models');
 const { Op } = require('sequelize');
 const moment = require('moment-timezone');
 const cron = require('node-cron');
+const whatsappService = require('./whatsappService');
 
 // إرسال تذكير بالموعد
 async function sendAppointmentReminder(appointment) {
   try {
-    // هنا يمكنك إضافة منطق إرسال التذكير عبر الواتساب أو البريد الإلكتروني
-    console.log(`إرسال تذكير بالموعد #${appointment.id} للعميل ${appointment.customerName}`);
+    console.log(`[Appointment] إرسال تذكير بالموعد #${appointment.id} للعميل ${appointment.customerName}`);
     
-    // تحديث حالة التذكير
-    await appointment.update({
-      reminderSent: true,
-      reminderSentAt: new Date()
-    });
+    // التحقق من وجود session نشط للمستخدم
+    const hasSession = whatsappService.userClients.has(appointment.userId);
+    if (!hasSession) {
+      console.log(`[Appointment] ⚠️ No active WhatsApp session for user ${appointment.userId}, skipping reminder`);
+      return { success: false, message: 'No active WhatsApp session', skipped: true };
+    }
 
-    return { success: true, message: 'تم إرسال التذكير بنجاح' };
+    // إنشاء رسالة تذكير طبيعية ومهذبة
+    const appointmentTime = moment(appointment.appointmentDate).format('YYYY-MM-DD HH:mm');
+    const reminderMessage = `📅 تذكير بالموعد
+
+مرحباً ${appointment.customerName},
+
+نود تذكيرك بالموعد المجدول:
+📌 الخدمة: ${appointment.serviceType}
+📅 التاريخ والوقت: ${appointmentTime}
+${appointment.location ? `📍 المكان: ${appointment.location}\n` : ''}
+${appointment.notes ? `📝 ملاحظات: ${appointment.notes}\n` : ''}
+ننتظركم في الوقت المحدد.`;
+
+    // إرسال الرسالة مع delay عشوائي (3-5 ثوان) لتجنب spam patterns
+    const randomDelay = 3000 + Math.random() * 2000; // 3-5 seconds
+    await new Promise(resolve => setTimeout(resolve, randomDelay));
+    
+    const sendResult = await whatsappService.sendMessage(
+      appointment.userId,
+      appointment.customerPhone,
+      reminderMessage
+    );
+
+    if (sendResult === true || sendResult?.success === true) {
+      // تحديث حالة التذكير
+      await appointment.update({
+        reminderSent: true,
+        reminderSentAt: new Date()
+      });
+
+      console.log(`[Appointment] ✅ تم إرسال التذكير بنجاح للموعد #${appointment.id}`);
+      return { success: true, message: 'تم إرسال التذكير بنجاح' };
+    } else {
+      console.error(`[Appointment] ❌ فشل في إرسال التذكير للموعد #${appointment.id}`);
+      return { success: false, message: 'فشل في إرسال التذكير' };
+    }
   } catch (error) {
-    console.error('Error sending appointment reminder:', error);
+    console.error('[Appointment] Error sending appointment reminder:', error);
     return { success: false, message: 'فشل في إرسال التذكير', error: error.message };
   }
 }
@@ -29,6 +65,7 @@ async function sendUpcomingAppointmentsReminders() {
     const reminderTime = now.clone().add(1, 'hour'); // تذكير قبل ساعة
     const reminderEndTime = now.clone().add(2, 'hours');
 
+    // ✅ Limit query to avoid too many results at once
     const upcomingAppointments = await Appointment.findAll({
       where: {
         appointmentDate: {
@@ -39,22 +76,40 @@ async function sendUpcomingAppointmentsReminders() {
         },
         reminderSent: false
       },
-      order: [['appointmentDate', 'ASC']]
+      order: [['appointmentDate', 'ASC']],
+      limit: 10 // ✅ Limit to 10 appointments per batch
     });
 
-    console.log(`تم العثور على ${upcomingAppointments.length} موعد يحتاج تذكير`);
+    console.log(`[Appointment] تم العثور على ${upcomingAppointments.length} موعد يحتاج تذكير`);
 
+    // ✅ إرسال مع delay بين كل رسالة (5-8 ثوان) لتجنب spam patterns
+    let sentCount = 0;
+    let skippedCount = 0;
+    
     for (const appointment of upcomingAppointments) {
-      await sendAppointmentReminder(appointment);
+      // Delay عشوائي بين 5-8 ثوان بين كل رسالة
+      if (sentCount > 0) {
+        const delayBetweenMessages = 5000 + Math.random() * 3000; // 5-8 seconds
+        await new Promise(resolve => setTimeout(resolve, delayBetweenMessages));
+      }
+      
+      const result = await sendAppointmentReminder(appointment);
+      if (result.success) {
+        sentCount++;
+      } else if (result.skipped) {
+        skippedCount++;
+      }
     }
 
     return {
       success: true,
-      message: `تم إرسال تذكيرات لـ ${upcomingAppointments.length} موعد`,
-      appointmentsCount: upcomingAppointments.length
+      message: `تم إرسال تذكيرات لـ ${sentCount} موعد (تم تخطي ${skippedCount} لعدم وجود session)`,
+      appointmentsCount: upcomingAppointments.length,
+      sentCount,
+      skippedCount
     };
   } catch (error) {
-    console.error('Error sending upcoming appointments reminders:', error);
+    console.error('[Appointment] Error sending upcoming appointments reminders:', error);
     return { success: false, message: 'فشل في إرسال تذكيرات المواعيد', error: error.message };
   }
 }
@@ -65,6 +120,7 @@ async function sendDailyAppointmentsReminders() {
     const today = moment().startOf('day');
     const tomorrow = moment().add(1, 'day').startOf('day');
 
+    // ✅ Limit query to avoid too many results at once
     const todayAppointments = await Appointment.findAll({
       where: {
         appointmentDate: {
@@ -74,7 +130,8 @@ async function sendDailyAppointmentsReminders() {
           [Op.in]: ['pending', 'confirmed']
         }
       },
-      order: [['appointmentTime', 'ASC']]
+      order: [['appointmentTime', 'ASC']],
+      limit: 50 // ✅ Limit to 50 appointments per batch
     });
 
     console.log(`تم العثور على ${todayAppointments.length} موعد اليوم`);
@@ -107,6 +164,7 @@ async function sendMissedAppointmentsReminders() {
     const now = moment();
     const oneHourAgo = now.clone().subtract(1, 'hour');
 
+    // ✅ Limit query to avoid too many results at once
     const missedAppointments = await Appointment.findAll({
       where: {
         appointmentDate: {
@@ -114,7 +172,8 @@ async function sendMissedAppointmentsReminders() {
         },
         status: 'confirmed',
         reminderSent: true
-      }
+      },
+      limit: 50 // ✅ Limit to 50 appointments per batch
     });
 
     console.log(`تم العثور على ${missedAppointments.length} موعد مفقود`);
@@ -145,6 +204,7 @@ async function sendWeeklyAppointmentsReminders() {
     const startOfWeek = moment().startOf('week');
     const endOfWeek = moment().endOf('week');
 
+    // ✅ Limit query to avoid too many results at once
     const weeklyAppointments = await Appointment.findAll({
       where: {
         appointmentDate: {
@@ -154,7 +214,8 @@ async function sendWeeklyAppointmentsReminders() {
           [Op.in]: ['pending', 'confirmed', 'completed']
         }
       },
-      order: [['appointmentDate', 'ASC']]
+      order: [['appointmentDate', 'ASC']],
+      limit: 100 // ✅ Limit to 100 appointments per batch
     });
 
     // تجميع المواعيد حسب اليوم

@@ -294,18 +294,15 @@ async function getQRCode(req, res) {
   try {
     const userId = req.userId;
     const result = await whatsappService.getQRCode(userId);
-    console.log(`[WA Controller] getQRCode for user ${userId}:`, result ? 'HAS RESULT' : 'NO RESULT', result?.qrCode ? 'HAS QR' : 'NO QR');
     
-    // Service now returns an object with { success, qrCode, message? }
+    // ✅ Silent mode - no logging to prevent connection issues
     if (result && result.qrCode) {
-      console.log(`[WA Controller] ✅ Sending QR code to frontend (length: ${result.qrCode.length})`);
       res.json({
         success: true,
         qrCode: result.qrCode,
         message: result.message || 'QR Code available'
       });
     } else {
-      console.log(`[WA Controller] ⚠️ No QR code available for user ${userId}`);
       res.json({
         success: true,
         qrCode: null,

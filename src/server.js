@@ -117,9 +117,20 @@ const allowedOrigins = [
 ];
 
 app.use((req, res, next) => {
-  console.log('Request origin:', req.headers.origin);
-  console.log('Request method:', req.method);
-  console.log('Request URL:', req.url);
+  // ✅ Removed excessive logging to avoid spam detection and reduce server load
+  // Skip logging for status polling endpoints to reduce noise
+  const isPollingEndpoint = req.url && (
+    req.url.includes('/api/whatsapp/status') || 
+    req.url.includes('/api/usage/stats')
+  );
+  
+  // Only log in development mode and skip polling endpoints
+  if (process.env.NODE_ENV === 'development' && !isPollingEndpoint) {
+    // Uncomment for debugging if needed:
+    // console.log('Request origin:', req.headers.origin);
+    // console.log('Request method:', req.method);
+    // console.log('Request URL:', req.url);
+  }
   
   const origin = req.headers.origin;
   
