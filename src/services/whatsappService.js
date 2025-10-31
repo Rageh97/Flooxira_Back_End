@@ -85,81 +85,32 @@ class WhatsAppService {
     process.removeAllListeners('unhandledRejection');
     process.removeAllListeners('uncaughtException');
 
-    // ✅ Handle unhandled promise rejections
-    // Ignore EBUSY errors from LocalAuth.logout when Chrome/Puppeteer files are locked
     process.on('unhandledRejection', (reason, promise) => {
-      // ✅ Ignore file locking errors during logout cleanup
-      const errorMessage = reason instanceof Error ? reason.message : String(reason);
-      
-      if (
-        errorMessage.includes('EBUSY') ||
-        errorMessage.includes('resource busy or locked') ||
-        errorMessage.includes('EPERM') ||
-        errorMessage.includes('EACCES') ||
-        errorMessage.includes('ENOENT') ||
-        errorMessage.includes('LocalAuth') ||
-        errorMessage.includes('LocalAuth.js') ||
-        errorMessage.includes('logout') ||
-        errorMessage.includes('unlink') ||
-        errorMessage.includes('rmSync') ||
-        errorMessage.includes('chrome_debug.log') ||
-        errorMessage.includes('Cookies-journal') ||
-        errorMessage.includes('Cookies') ||
-        errorMessage.includes('Default') ||
-        errorMessage.includes('Target closed') ||
-        errorMessage.includes('Protocol error') ||
-        errorMessage.includes('Session closed') ||
-        errorMessage.includes('Browser closed') ||
-        errorMessage.includes('Navigation failed') ||
-        errorMessage.includes('Execution context was destroyed') ||
-        errorMessage.includes('Page closed')
-      ) {
-        // ✅ Silent - these are non-critical errors from file cleanup during logout
+      if (reason && reason.message && (
+        reason.message.includes('EBUSY') ||
+        reason.message.includes('resource busy or locked') ||
+        reason.message.includes('LocalAuth') ||
+        reason.message.includes('chrome_debug.log') ||
+        reason.message.includes('Cookies') ||
+        reason.message.includes('unlink')
+      )) {
         return;
       }
-      
-      // Only log unexpected errors (not file cleanup errors)
-      if (reason instanceof Error) {
-        console.error('Unhandled Rejection:', reason.message);
-      } else {
-        console.error('Unhandled Rejection:', reason);
-      }
+      console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     });
 
-    // ✅ Handle uncaught exceptions
-    // Ignore EBUSY errors from LocalAuth.logout when Chrome/Puppeteer files are locked
     process.on('uncaughtException', (error) => {
-      const errorMessage = error.message || String(error);
-      
-      // ✅ Ignore file locking errors during logout cleanup
-      if (
-        errorMessage.includes('EBUSY') ||
-        errorMessage.includes('resource busy or locked') ||
-        errorMessage.includes('EPERM') ||
-        errorMessage.includes('EACCES') ||
-        errorMessage.includes('ENOENT') ||
-        errorMessage.includes('LocalAuth') ||
-        errorMessage.includes('LocalAuth.js') ||
-        errorMessage.includes('logout') ||
-        errorMessage.includes('unlink') ||
-        errorMessage.includes('rmSync') ||
-        errorMessage.includes('chrome_debug.log') ||
-        errorMessage.includes('Cookies-journal') ||
-        errorMessage.includes('Cookies') ||
-        errorMessage.includes('Default') ||
-        errorMessage.includes('Target closed') ||
-        errorMessage.includes('Protocol error') ||
-        errorMessage.includes('Session closed') ||
-        errorMessage.includes('Browser closed') ||
-        errorMessage.includes('Navigation failed') ||
-        errorMessage.includes('Execution context was destroyed') ||
-        errorMessage.includes('Page closed')
-      ) {
-        // ✅ Silent - these are non-critical errors from file cleanup during logout
+      if (error && error.message && (
+        error.message.includes('EBUSY') ||
+        error.message.includes('resource busy or locked') ||
+        error.message.includes('LocalAuth') ||
+        error.message.includes('chrome_debug.log') ||
+        error.message.includes('Cookies') ||
+        error.message.includes('unlink')
+      )) {
         return;
       }
-      
-      console.error('Uncaught Exception:', errorMessage);
+      console.error('Uncaught Exception:', error);
     });
   }
 
@@ -259,34 +210,6 @@ class WhatsAppService {
       // Create WhatsApp client with FIXED session ID (no timestamp!)
       // Using timestamp creates NEW device each time → WhatsApp logs out old sessions!
       const sessionId = `user_${userId}`;
-      
-      // ✅ Clean up old session files if marked for cleanup (from previous LOGOUT)
-      const state = this.userStates.get(userId) || {};
-      if (state.needsCleanup) {
-        // Delay cleanup slightly to ensure Chrome/Puppeteer has released file locks
-        setTimeout(() => {
-          try {
-            const waAuthDir = './data/wa-auth';
-            if (fs.existsSync(waAuthDir)) {
-              const entries = fs.readdirSync(waAuthDir);
-              entries.forEach(entry => {
-                if (entry.includes(`user_${userId}`) || entry.startsWith(`session-user_${userId}`)) {
-                  const sessionPath = path.join(waAuthDir, entry);
-                  try {
-                    fs.rmSync(sessionPath, { recursive: true, force: true });
-                  } catch (err) {
-                    // Silent - ignore if still locked
-                  }
-                }
-              });
-            }
-            state.needsCleanup = false;
-            this.userStates.set(userId, state);
-          } catch (error) {
-            // Silent - non-critical
-          }
-        }, 5000); // Wait 5 seconds for file locks to release
-      }
       
       // 🔥 OPTIMIZED CLIENT - أفضل إعدادات للاستقرار
       const client = new Client({
@@ -401,37 +324,12 @@ class WhatsAppService {
       });
 
       // Use 'once' to ensure disconnection handler fires only ONCE
-      client.once('disconnected', async (reason) => {
+      client.once('disconnected', (reason) => {
         // ⚠️ معالجة خاصة للـ LOGOUT - واتساب كشف الأتمتة
         if (reason === 'LOGOUT') {
           console.error(`[WA] CRITICAL: WhatsApp LOGOUT for user ${userId}`);
-          
-          // ✅ SAFE CLEANUP: Close browser first to release file locks
-          try {
-            const client = this.userClients.get(userId);
-            if (client && client.pupBrowser) {
-              // Close browser pages first
-              const pages = await client.pupBrowser.pages();
-              for (const page of pages) {
-                try {
-                  await page.close().catch(() => {});
-                } catch (e) {}
-              }
-              // Close browser gracefully
-              await client.pupBrowser.close().catch(() => {});
-              // Wait a bit for file locks to release
-              await new Promise(resolve => setTimeout(resolve, 2000));
-            }
-          } catch (e) {
-            // Silent - non-critical
-          }
-          
-          // ✅ Now mark for cleanup (files will be removed on next start)
-          try {
-            const state = this.userStates.get(userId) || {};
-            state.needsCleanup = true;
-            this.userStates.set(userId, state);
-          } catch (e) {}
+          // حذف session files تلقائياً عند LOGOUT
+          this.cleanupSessionFilesOnLogout(userId);
         }
         
         this.handleDisconnection(userId, reason);
@@ -499,26 +397,9 @@ class WhatsAppService {
         this.userStates.set(userId, { initializing: false, reconnecting: false });
         this.initializationLocks.delete(userId);
         
-        // ✅ SAFE CLEANUP: Close browser first, then destroy client
+        // Clean up failed client
         try {
           client.removeAllListeners();
-          
-          // Close browser pages and browser first to release file locks
-          if (client.pupBrowser) {
-            try {
-              const pages = await client.pupBrowser.pages();
-              for (const page of pages) {
-                try {
-                  await page.close().catch(() => {});
-                } catch (e) {}
-              }
-              await client.pupBrowser.close().catch(() => {});
-              // Wait for file locks to release
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            } catch (e) {}
-          }
-          
-          // Now destroy client (this may try to logout, but browser is closed)
           await client.destroy().catch(() => {});
         } catch (e) {}
         
@@ -641,20 +522,36 @@ class WhatsAppService {
   }
 
   // ⚠️ تنظيف شامل عند LOGOUT - حذف كل session files للمستخدم
-  // ✅ DISABLED: لا نحاول حذف الملفات مباشرة عند LOGOUT
-  // لأن Client.js يحاول حذفها تلقائياً وملفات Chrome/Puppeteer تكون مقفلة
-  // هذا يسبب EBUSY errors. بدلاً من ذلك، الملفات ستنظف تلقائياً عند الجلسة القادمة
   cleanupSessionFilesOnLogout(userId) {
-    // ✅ Silent cleanup - don't try to delete locked files
-    // Files will be cleaned up automatically on next session start if needed
-    // Trying to delete them here causes EBUSY errors because Chrome/Puppeteer has them locked
     try {
-      // Just mark session as needing cleanup - actual cleanup will happen on next start
-      const state = this.userStates.get(userId) || {};
-      state.needsCleanup = true;
-      this.userStates.set(userId, state);
+      const sessionId = `user_${userId}`;
+      const authPaths = [
+        './data/wa-auth',
+        './.wwebjs_auth'
+      ];
+      
+      authPaths.forEach(authDir => {
+        if (fs.existsSync(authDir)) {
+          const entries = fs.readdirSync(authDir);
+          entries.forEach(entry => {
+            // حذف أي session يخص هذا المستخدم
+            if (entry.includes(sessionId) || entry.startsWith(`session-${sessionId}`)) {
+              const sessionPath = path.join(authDir, entry);
+              try {
+                console.log(`[WA] 🗑️ Removing corrupted session: ${entry}`);
+                fs.rmSync(sessionPath, { recursive: true, force: true, maxRetries: 3 });
+                console.log(`[WA] ✅ Removed: ${entry}`);
+              } catch (err) {
+                if (err.code === 'EBUSY' || err.code === 'EPERM') {
+                  console.log(`[WA] ⚠️ Could not remove ${entry} (file locked). Run cleanup-sessions.js manually.`);
+                }
+              }
+            }
+          });
+        }
+      });
     } catch (error) {
-      // Silent - non-critical
+      console.error(`[WA] Error cleaning up session files for user ${userId}:`, error.message);
     }
   }
 
@@ -1368,26 +1265,7 @@ class WhatsAppService {
 
       const client = this.userClients.get(userId);
       if (client) {
-        // ✅ SAFE CLEANUP: Close browser first to release file locks
-        try {
-          if (client.pupBrowser) {
-            try {
-              const pages = await client.pupBrowser.pages();
-              for (const page of pages) {
-                try {
-                  await page.close().catch(() => {});
-                } catch (e) {}
-              }
-              await client.pupBrowser.close().catch(() => {});
-              // Wait for file locks to release
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            } catch (e) {}
-          }
-          // Now destroy client (this may try to logout, but browser is closed)
-          await client.destroy().catch(() => {});
-        } catch (e) {
-          // Silent - non-critical
-        }
+        await client.destroy();
       }
       
       this.userClients.delete(userId);
