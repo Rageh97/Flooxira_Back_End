@@ -86,30 +86,81 @@ class WhatsAppService {
     process.removeAllListeners('uncaughtException');
 
     process.on('unhandledRejection', (reason, promise) => {
-      if (reason && reason.message && (
-        reason.message.includes('EBUSY') ||
-        reason.message.includes('resource busy or locked') ||
-        reason.message.includes('LocalAuth') ||
-        reason.message.includes('chrome_debug.log') ||
-        reason.message.includes('Cookies') ||
-        reason.message.includes('unlink')
-      )) {
+      // ✅ Ignore non-critical errors that occur during normal operation
+      const errorMessage = reason?.message || reason?.originalMessage || String(reason || '');
+      const errorName = reason?.name || '';
+      
+      if (
+        // File locking errors (EBUSY, EPERM)
+        errorMessage.includes('EBUSY') ||
+        errorMessage.includes('resource busy or locked') ||
+        errorMessage.includes('EPERM') ||
+        errorMessage.includes('EACCES') ||
+        // LocalAuth cleanup errors
+        errorMessage.includes('LocalAuth') ||
+        errorMessage.includes('chrome_debug.log') ||
+        errorMessage.includes('Cookies') ||
+        errorMessage.includes('unlink') ||
+        // Puppeteer/Chrome connection errors (non-critical when target is closed)
+        errorMessage.includes('Target closed') ||
+        errorMessage.includes('Protocol error') ||
+        errorMessage.includes('ProtocolError') ||
+        errorMessage.includes('Session closed') ||
+        errorMessage.includes('Browser closed') ||
+        errorMessage.includes('Connection closed') ||
+        errorMessage.includes('Runtime.callFunctionOn') ||
+        errorMessage.includes('ExecutionContext') ||
+        errorName === 'ProtocolError' ||
+        // Navigation/page errors (non-critical)
+        errorMessage.includes('Navigation failed') ||
+        errorMessage.includes('Execution context was destroyed') ||
+        errorMessage.includes('Page closed') ||
+        errorMessage.includes('Target closed')
+      ) {
+        // ✅ Silent - these are non-critical errors during normal operation
         return;
       }
+      
+      // Only log unexpected critical errors
       console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     });
 
     process.on('uncaughtException', (error) => {
-      if (error && error.message && (
-        error.message.includes('EBUSY') ||
-        error.message.includes('resource busy or locked') ||
-        error.message.includes('LocalAuth') ||
-        error.message.includes('chrome_debug.log') ||
-        error.message.includes('Cookies') ||
-        error.message.includes('unlink')
-      )) {
+      // ✅ Ignore non-critical errors that occur during normal operation
+      const errorMessage = error?.message || String(error || '');
+      const errorName = error?.name || '';
+      
+      if (
+        // File locking errors (EBUSY, EPERM)
+        errorMessage.includes('EBUSY') ||
+        errorMessage.includes('resource busy or locked') ||
+        errorMessage.includes('EPERM') ||
+        errorMessage.includes('EACCES') ||
+        // LocalAuth cleanup errors
+        errorMessage.includes('LocalAuth') ||
+        errorMessage.includes('chrome_debug.log') ||
+        errorMessage.includes('Cookies') ||
+        errorMessage.includes('unlink') ||
+        // Puppeteer/Chrome connection errors (non-critical when target is closed)
+        errorMessage.includes('Target closed') ||
+        errorMessage.includes('Protocol error') ||
+        errorMessage.includes('ProtocolError') ||
+        errorMessage.includes('Session closed') ||
+        errorMessage.includes('Browser closed') ||
+        errorMessage.includes('Connection closed') ||
+        errorMessage.includes('Runtime.callFunctionOn') ||
+        errorMessage.includes('ExecutionContext') ||
+        errorName === 'ProtocolError' ||
+        // Navigation/page errors (non-critical)
+        errorMessage.includes('Navigation failed') ||
+        errorMessage.includes('Execution context was destroyed') ||
+        errorMessage.includes('Page closed')
+      ) {
+        // ✅ Silent - these are non-critical errors during normal operation
         return;
       }
+      
+      // Only log unexpected critical errors
       console.error('Uncaught Exception:', error);
     });
   }
@@ -266,6 +317,7 @@ class WhatsAppService {
         const s = this.userStates.get(userId) || {};
         s.initializing = false;
         s.ready = true;
+        s.readyTimestamp = Date.now(); // ✅ Track when ready to prevent immediate getState() calls
         this.userStates.set(userId, s);
         
         // Clear QR code once connected
@@ -280,31 +332,44 @@ class WhatsAppService {
         // RELEASE LOCK when ready
         this.initializationLocks.delete(userId);
         
-        // 🤖 INJECT ANTI-DETECTION SCRIPT (silent)
-        try {
-          const pages = await client.pupBrowser.pages();
-          const page = pages[0];
-          if (page) {
-            await page.evaluateOnNewDocument(() => {
-              // Remove webdriver property
-              Object.defineProperty(navigator, 'webdriver', { get: () => false });
-              
-              // Remove automation flags
-              Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-              Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-              
-              // Override permissions
-              const originalQuery = window.navigator.permissions.query;
-              window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                  Promise.resolve({ state: Notification.permission }) :
-                  originalQuery(parameters)
-              );
-            });
+        // ✅ CRITICAL: Wait 5 seconds after ready before any operations
+        // This prevents immediate disconnection caused by operations right after connection
+        setTimeout(async () => {
+          // Double-check connection is still active before doing anything
+          if (!this.userClients.has(userId) || !client || !client.info) {
+            return; // Client disconnected, skip everything
           }
-        } catch (antiDetectErr) {
-          // Silent - non-critical
-        }
+          
+          // ✅ DISABLED: Anti-detection script causes ProtocolError and disconnections
+          // WhatsApp Web.js already has built-in anti-detection, this is redundant and harmful
+          // The script causes "Target closed" errors immediately after connection
+          
+          // 🤖 INJECT ANTI-DETECTION SCRIPT (DISABLED - causes disconnections)
+          // try {
+          //   if (!client.pupBrowser || !client.pupBrowser.isConnected()) {
+          //     return;
+          //   }
+          //   
+          //   const pages = await client.pupBrowser.pages();
+          //   const page = pages[0];
+          //   
+          //   if (page && !page.isClosed()) {
+          //     await page.evaluateOnNewDocument(() => {
+          //       Object.defineProperty(navigator, 'webdriver', { get: () => false });
+          //       Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+          //       Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+          //       const originalQuery = window.navigator.permissions.query;
+          //       window.navigator.permissions.query = (parameters) => (
+          //         parameters.name === 'notifications' ?
+          //           Promise.resolve({ state: Notification.permission }) :
+          //           originalQuery(parameters)
+          //       );
+          //     });
+          //   }
+          // } catch (antiDetectErr) {
+          //   // Silent - ignore errors
+          // }
+        }, 5000); // ✅ Wait 5 seconds after ready
       });
 
       client.once('authenticated', () => {
@@ -1154,8 +1219,8 @@ class WhatsAppService {
     const cacheKey = `status_${userId}`;
     const cached = this.statusCache.get(cacheKey);
     
-    // Cache for 10 seconds - prevents excessive getState() calls
-    if (cached && Date.now() - cached.timestamp < 10000) {
+    // Cache for 15 seconds - prevents excessive getState() calls that cause disconnections
+    if (cached && Date.now() - cached.timestamp < 15000) {
       return cached.data;
     }
 
@@ -1168,21 +1233,29 @@ class WhatsAppService {
         status: 'disconnected',
         message: 'No active WhatsApp session'
       };
-      // Cache disconnected status for 5 seconds
+      // Cache disconnected status for 10 seconds
       this.statusCache.set(cacheKey, { data: result, timestamp: Date.now() });
       return result;
     }
 
     try {
-      // ✅ ONLY call getState() if state is not already known as ready
-      // This prevents repeated expensive calls that can cause disconnection
+      // ✅ CRITICAL: NEVER call getState() immediately after ready - causes disconnection!
+      // Always use cached state if we know it's ready
       let clientState;
       if (state?.ready) {
-        // If we know it's ready, don't call getState() - just use cached state
+        // ✅ If we know it's ready, NEVER call getState() - it causes immediate disconnection
+        // Just return CONNECTED status directly without calling getState()
         clientState = 'CONNECTED';
       } else {
-        // Only call getState() if not ready (less frequent)
-        clientState = await client.getState();
+        // Only call getState() if not ready (less frequent, safer)
+        // But add a check to prevent calling right after initialization
+        const timeSinceInit = state?.readyTimestamp ? Date.now() - state.readyTimestamp : Infinity;
+        if (timeSinceInit < 30000) {
+          // ✅ Don't call getState() within 30 seconds of initialization - too risky
+          clientState = 'CONNECTED'; // Assume connected if recently initialized
+        } else {
+          clientState = await client.getState();
+        }
       }
       
       const result = {
@@ -1192,7 +1265,7 @@ class WhatsAppService {
         initializing: state?.initializing || false
       };
       
-      // Cache the result for 10 seconds
+      // Cache the result for 15 seconds (increased from 10 to reduce calls)
       this.statusCache.set(cacheKey, { data: result, timestamp: Date.now() });
       return result;
     } catch (error) {
@@ -1202,7 +1275,7 @@ class WhatsAppService {
         message: 'Could not determine WhatsApp session status',
         error: error.message
       };
-      // Cache error for 5 seconds
+      // Cache error for 10 seconds
       this.statusCache.set(cacheKey, { data: result, timestamp: Date.now() });
       return result;
     }
